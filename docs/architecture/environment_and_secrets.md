@@ -13,6 +13,7 @@ Iteration 005 keeps the platform in local research mode. Real data providers are
 - No module may call broker, account, private exchange, order, margin, futures, or perpetual endpoints.
 - Raw data, processed data, generated reports, and PDFs remain outside Git unless explicitly approved.
 - Data quality reports generated from real data remain outside Git with the datasets/reports they describe.
+- The local UI may display only public settings snapshots, provider status, and local ignored reports; it must never display, cache, or serialize API key values.
 
 ## Current Environment Variables
 
@@ -64,3 +65,7 @@ Real data ingestion writes only local research datasets and registry metadata. I
 Iteration 006 adds local JSON data quality reports. They may include provider symbols, coverage, warnings, and generated paths, but no secrets. They are still excluded from Git because they describe real downloaded data.
 
 Iteration 007 adds keyed read-only providers. API key values must never be printed, stored in reports/manifests, included in cache filenames, or committed. Provider status can expose only booleans such as `configured: true`.
+
+Iteration 008 adds a local Streamlit UI. The UI reads `public_settings_dict`, provider status rows, local registry manifests, data quality JSON, generated report JSON, and the trial registry. It does not read `.env` directly, does not display environment variables, and does not run provider downloads, network smoke tests, backtests, orders, brokers, or private endpoints automatically.
+
+The UI also explains formulas and concepts in plain language. These explanations are educational and are not financial advice. Any generated demo artifact must be marked `DEMO_SYNTHETIC_NOT_REAL_DATA` and must remain outside Git with data and reports.

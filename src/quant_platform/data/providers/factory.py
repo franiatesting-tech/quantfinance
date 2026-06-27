@@ -105,7 +105,9 @@ def list_available_providers(settings: PlatformSettings) -> list[dict[str, objec
         if configured_attr is not None:
             configured = bool(getattr(settings.provider_credentials, str(configured_attr)))
         requires_key = bool(capability["requires_api_key"])
-        if not enabled:
+        if not enabled and requires_key and configured:
+            status = "configured_but_disabled"
+        elif not enabled:
             status = "disabled"
         elif requires_key and not configured:
             status = "missing_api_key"

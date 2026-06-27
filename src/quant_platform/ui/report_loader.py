@@ -1,0 +1,183 @@
+"""Load local registry manifests and generated reports for the read-only UI."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any
+
+
+def discover_datasets(registry_dir: str | Path = "data/registry") -> list[dict[str, Any]]:
+    """Discover local registered datasets without loading market-bar CSV files."""
+
+    root = Path(registry_dir)
+    if not root.exists():
+        return []
+    rows = []
+    for manifest_path in sorted(root.rglob("manifest.json")):
+        manifest = _read_json_object(manifest_path)
+        if manifest is None:
+            rows.append(_error_row(manifest_path, "invalid_manifest_json"))
+            continue
+        metadata = manifest.get("metadata", {})
+        data_path = manifest_path.parent / str(manifest.get("data_file", "data.csv"))
+        quality_file = manifest.get("quality_report_file")
+        quality_path = manifest_path.parent / str(quality_file) if quality_file else None
+        rows.append(
+            {
+                "dataset_id": str(metadata.get("dataset_id", manifest_path.parent.parent.name)),
+                "version": str(metadata.get("version", manifest_path.parent.name)),
+                "source": str(metadata.get("source", "unknown")),
+                "market_type": str(metadata.get("market_type", "unknown")),
+                "frequency": str(metadata.get("frequency", "unknown")),
+                "row_count": int(manifest.get("row_count", 0)),
+                "columns": [str(column) for column in manifest.get("columns", [])],
+                "manifest_path": str(manifest_path),
+                "data_path": str(data_path),
+                "data_path_exists": data_path.exists(),
+                "quality_report_path": str(quality_path) if quality_path else None,
+                "quality_report_exists": bool(quality_path and quality_path.exists()),
+                "coverage_metadata": manifest.get("coverage_metadata", {}),
+                "registered_at": str(manifest.get("registered_at", "")),
+            }
+        )
+    return rows
+
+
+def discover_reports(report_dir: str | Path = "reports/generated") -> list[dict[str, Any]]:
+    """Discover generated JSON reports without executing any pipeline."""
+
+    root = Path(report_dir)
+    if not root.exists():
+        return []
+    rows = []
+    for report_path in sorted(root.rglob("*.json")):
+        payload = _read_json_object(report_path)
+        if payload is None:
+            rows.append(_error_row(report_path, "invalid_report_json"))
+            continue
+        rows.append(
+            {
+                "path": str(report_path),
+                "name": report_path.name,
+                "report_type": classify_report(payload),
+                "size_bytes": report_path.stat().st_size,
+                "modified_at": _modified_at(report_path),
+                "summary": summarize_report_payload(payload),
+            }
+        )
+    return rows
+
+
+def read_json_report(path: str | Path) -> dict[str, Any]:
+    """Read one JSON report and return an object payload."""
+
+    payload = _read_json_object(Path(path))
+    if payload is None:
+        raise ValueError(f"Invalid JSON report: {path}")
+    return payload
+
+
+def load_trial_registry(
+    path: str | Path = "reports/generated/strategy_trials.jsonl",
+) -> list[dict[str, Any]]:
+    """Load the local JSONL strategy trial registry if it exists."""
+
+    trial_path = Path(path)
+    if not trial_path.exists():
+        return []
+    rows = []
+    lines = trial_path.read_text(encoding="utf-8").splitlines()
+    for line_number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            rows.append({"line_number": line_number, "error": "invalid_jsonl"})
+            continue
+        if isinstance(value, dict):
+            rows.append(value)
+        else:
+            rows.append({"line_number": line_number, "error": "non_object_jsonl"})
+    return rows
+
+
+def load_dataset_quality_report(dataset_row: dict[str, Any]) -> dict[str, Any] | None:
+    """Load the data quality report referenced by a discovered dataset row."""
+
+    quality_path = dataset_row.get("quality_report_path")
+    if not quality_path:
+        return None
+    path = Path(str(quality_path))
+    if not path.exists():
+        return None
+    return _read_json_object(path)
+
+
+def classify_report(payload: dict[str, Any]) -> str:
+    """Classify a generated report payload by stable top-level keys."""
+
+    if "comparison_table" in payload and "profiles" in payload:
+        return "profile_comparison"
+    if "provider_summaries" in payload:
+        return "provider_comparison"
+    if "coverage_by_asset" in payload and "suitable_for_backtest_demo" in payload:
+        return "data_quality"
+    if "final_equity" in payload and "metadata" in payload:
+        return "backtest"
+    return "json_report"
+
+
+def summarize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Build a compact report summary for tables and status cards."""
+
+    report_type = classify_report(payload)
+    if report_type == "profile_comparison":
+        return {
+            "dataset_id": payload.get("dataset_id"),
+            "version": payload.get("version"),
+            "profiles": sorted(str(key) for key in payload.get("profiles", {})),
+            "warnings": len(payload.get("warnings", [])),
+        }
+    if report_type == "data_quality":
+        return {
+            "symbols_total": payload.get("symbols_total"),
+            "failed_checks": len(payload.get("failed_checks", [])),
+            "warnings": len(payload.get("warnings", [])),
+            "suitable_for_backtest_demo": payload.get("suitable_for_backtest_demo"),
+        }
+    if report_type == "backtest":
+        metadata = payload.get("metadata", {})
+        return {
+            "strategy": metadata.get("strategy_name", "equal_weight_real_data_demo")
+            if isinstance(metadata, dict)
+            else "unknown",
+            "final_equity": payload.get("final_equity"),
+            "max_drawdown": payload.get("max_drawdown"),
+            "sharpe_ratio": payload.get("sharpe_ratio"),
+        }
+    if report_type == "provider_comparison":
+        return {
+            "providers_compared": payload.get("providers_compared", []),
+            "provider_count": len(payload.get("provider_summaries", [])),
+        }
+    return {"top_level_keys": sorted(str(key) for key in payload)[:8]}
+
+
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _modified_at(path: Path) -> str:
+    return str(path.stat().st_mtime_ns)
+
+
+def _error_row(path: Path, error: str) -> dict[str, Any]:
+    return {"path": str(path), "name": path.name, "error": error}

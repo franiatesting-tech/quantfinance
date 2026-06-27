@@ -1,6 +1,6 @@
 # Quant Platform
 
-Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical VaR, historical Expected Shortfall, performance metrics, portfolio baselines, transaction costs, vectorized backtesting, temporal validation splits, benchmark suite, VaR exception backtesting, anti-overfitting registry, settings guardrails, read-only real data ingestion, data quality reports, and profile comparison.
+Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical VaR, historical Expected Shortfall, performance metrics, portfolio baselines, transaction costs, vectorized backtesting, temporal validation splits, benchmark suite, VaR exception backtesting, anti-overfitting registry, settings guardrails, read-only real data ingestion, data quality reports, profile comparison, and a local read-only Streamlit research UI.
 
 ## Current State
 
@@ -14,12 +14,19 @@ Auditable Quant Finance research platform for equity and crypto experiments. The
 - CoinGecko is a metadata placeholder, not the primary OHLCV source.
 - Tests for providers, ingestion, CLI, and the real-data backtest pipeline use mocks and do not require network access.
 - Data quality reports summarize coverage, gaps, failed symbols, assumptions, and suitability for demo backtests.
-- No predictive ML, deep learning, DRL, CVXPY, Heston, Black-Scholes operative pricing, MLflow, or dashboards are implemented.
+- No predictive ML, deep learning, DRL, CVXPY, Heston, Black-Scholes operative pricing, MLflow, cloud dashboard, execution dashboard, broker dashboard, or trading dashboard is implemented.
+- The local UI inspects public settings, provider status, local dataset manifests, quality reports, generated reports, and allowed/prohibited actions. It does not run data downloads, backtests, network smoke tests, orders, or paper trading automatically.
 
 ## Local Setup
 
 ```powershell
 py -3 -m pip install -e ".[dev]"
+```
+
+Optional local UI dependencies:
+
+```powershell
+py -3 -m pip install -e ".[dev,ui]"
 ```
 
 Use `py -3` on this Windows environment. The `python` alias may point to the Microsoft Store stub unless configured manually.
@@ -41,9 +48,25 @@ py -3 -m quant_platform.cli run-backtest-demo --dataset-id real_daily_demo --ver
 py -3 -m quant_platform.cli compare-profiles --dataset-id real_daily_demo --version v1 --config configs/universe_etfs_crypto_daily.yaml --risk-config configs/risk_profiles.yaml --dry-run
 py -3 -m quant_platform.cli list-providers
 py -3 -m quant_platform.cli validate-providers
+py -3 -m quant_platform.cli ui-status
+py -3 -m quant_platform.cli launch-ui --dry-run
 ```
 
 The CLI loads safe settings and refuses live-trading scope.
+
+## Local UI
+
+```powershell
+py -3 -m quant_platform.cli launch-ui --host localhost --port 8501
+```
+
+The UI is local and read-only. It displays only public settings and `configured: true/false` provider metadata. It reads ignored local artifacts from `data/registry/` and `reports/generated/` when they exist.
+
+Available sections include `Inicio`, `Flujo conceptual`, `Estado del sistema`, `Providers`, `Universo`, `Datasets`, `Calidad de datos`, `Backtests`, `Comparacion de perfiles`, `Formulas`, `Acciones permitidas`, and `Riesgos y limites`.
+
+The `Formulas` section explains simple return, log return, portfolio return, equity curve, volatility, Sharpe, Sortino, max drawdown, VaR, Expected Shortfall, turnover, and transaction costs with LaTeX plus plain-language interpretation.
+
+The UI is not financial advice. Backtests are historical simulations with fictitious capital and do not guarantee future outcomes.
 
 ## Structure
 
@@ -82,6 +105,8 @@ Generated real-data artifacts are local only:
 - `data/registry/`: CSV datasets, manifests, and data quality reports.
 - `reports/generated/`: backtest reports, profile comparison reports, and trial registries.
 
+If these folders are empty, the UI shows safe CLI commands instead of failing. Demo artifacts, if generated in future, must be clearly marked `DEMO_SYNTHETIC_NOT_REAL_DATA` and remain ignored by Git.
+
 ## Initial Universe And Risk Profiles
 
 - Universe: ETFs, US equities watchlist, Europe/Spain proxies, indices, and crypto majors spot.
@@ -98,6 +123,7 @@ Generated real-data artifacts are local only:
 - Backtest report: generated under `reports/generated/`; it reports strategy and benchmark metrics after costs.
 - Profile comparison report: generated under `reports/generated/`; it compares conservative and aggressive profiles on the same dataset and benchmark set.
 - Provider comparison report: compares coverage/quality metadata across provider reports, not tick-by-tick price equality.
+- Local UI: reads these reports for inspection only and does not generate new reports automatically.
 
 Free public providers can revise data, fail per ticker, impose rate limits, and have licensing constraints. yfinance adjusted-price handling and corporate actions require review before professional use. Current universes can have survivorship bias.
 
@@ -120,6 +146,8 @@ Free public providers can revise data, fail per ticker, impose rate limits, and 
 - Iteration 005 notes: `docs/development/iteration_005_real_data_readonly_research.md`.
 - Iteration 006 notes: `docs/development/iteration_006_real_data_validation.md`.
 - Iteration 007 notes: `docs/development/iteration_007_keyed_readonly_providers.md`.
+- Iteration 008 notes: `docs/development/iteration_008_interactive_research_ui.md`.
+- Interactive UI design: `docs/architecture/interactive_ui_design.md`.
 - Provider architecture: `docs/architecture/real_data_pipeline.md`.
 - Universe policy: `docs/architecture/universe_selection.md`.
 - Local PDF bibliography metadata: `docs/literature/bibliography_map.md`.

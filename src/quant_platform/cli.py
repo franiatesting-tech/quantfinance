@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 
 from dotenv import load_dotenv
 
@@ -21,6 +22,7 @@ from quant_platform.data.providers.factory import (
 from quant_platform.data.schemas import MarketType
 from quant_platform.pipelines.profile_comparison import run_profile_comparison_pipeline
 from quant_platform.pipelines.real_data_backtest import run_real_data_backtest_pipeline
+from quant_platform.ui.actions import build_ui_status, launch_ui_command
 
 
 def _settings_json() -> str:
@@ -36,6 +38,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("show-settings")
     subparsers.add_parser("list-providers")
+
+    ui_status = subparsers.add_parser("ui-status")
+    ui_status.add_argument("--registry-dir", default="data/registry")
+    ui_status.add_argument("--report-dir", default="reports/generated")
+    ui_status.add_argument("--universe-config", default="configs/universe_etfs_crypto_daily.yaml")
+    ui_status.add_argument("--risk-profiles", default="configs/risk_profiles.yaml")
+
+    launch_ui = subparsers.add_parser("launch-ui")
+    launch_ui.add_argument("--host", default="localhost")
+    launch_ui.add_argument("--port", type=int, default=8501)
+    launch_ui.add_argument("--no-browser", action="store_true")
+    launch_ui.add_argument("--dry-run", action="store_true")
 
     validate = subparsers.add_parser("validate-providers")
     validate.add_argument("--network-smoke", action="store_true")
@@ -99,6 +113,31 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "ui-status":
+        print(
+            json.dumps(
+                build_ui_status(
+                    settings=settings,
+                    registry_dir=args.registry_dir,
+                    report_dir=args.report_dir,
+                    universe_config_path=args.universe_config,
+                    risk_profiles_path=args.risk_profiles,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
+    if args.command == "launch-ui":
+        command = launch_ui_command(
+            host=args.host,
+            port=args.port,
+            show_browser=not args.no_browser,
+        )
+        if args.dry_run:
+            print(json.dumps({"command": command}, indent=2, sort_keys=True))
+            return 0
+        return subprocess.call(command)
     if args.command == "validate-providers":
         result = _validate_providers(settings, network_smoke=args.network_smoke)
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -197,6 +236,9 @@ def _validate_providers(settings, network_smoke: bool) -> dict[str, object]:  # 
     smoke_results = []
     for provider in providers:
         name = str(provider["name"])
+        if not bool(provider["enabled"]):
+            smoke_results.append({"provider": name, "status": "skipped_disabled"})
+            continue
         if bool(provider["requires_api_key"]) and not bool(provider["configured"]):
             smoke_results.append({"provider": name, "status": "skipped_missing_api_key"})
             continue

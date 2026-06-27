@@ -27,6 +27,22 @@ def test_list_available_providers_never_exposes_keys() -> None:
     assert alpha["status"] == "missing_api_key"
 
 
+def test_list_available_providers_distinguishes_configured_disabled_keyed_provider() -> None:
+    settings = load_settings_from_env(
+        {
+            "POLYGON_ENABLED": "false",
+            "POLYGON_API_KEY": "polygon-secret",
+        }
+    )
+
+    providers = list_available_providers(settings)
+    polygon = next(row for row in providers if row["name"] == "polygon")
+
+    assert polygon["configured"] is True
+    assert polygon["enabled"] is False
+    assert polygon["status"] == "configured_but_disabled"
+
+
 def test_create_public_providers() -> None:
     settings = load_settings_from_env({})
 

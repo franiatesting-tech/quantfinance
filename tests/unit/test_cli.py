@@ -33,6 +33,39 @@ def test_cli_validate_providers_without_network(capsys) -> None:  # noqa: ANN001
     assert "smoke_results" not in payload
 
 
+def test_cli_ui_status_outputs_read_only_summary(capsys, tmp_path) -> None:  # noqa: ANN001
+    exit_code = cli.main(
+        [
+            "ui-status",
+            "--registry-dir",
+            str(tmp_path / "registry"),
+            "--report-dir",
+            str(tmp_path / "reports"),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert "ui_available" in payload
+    assert "streamlit_installed" in payload
+    assert "plotly_installed" in payload
+    assert payload["app_path"].endswith("app.py")
+    assert payload["read_only"] is True
+    assert payload["network_auto_run"] is False
+    assert payload["no_secrets_exposed"] is True
+    assert payload["dataset_count"] == 0
+    assert "alpha_vantage_api_key" not in json.dumps(payload).lower()
+
+
+def test_cli_launch_ui_dry_run_does_not_start_streamlit(capsys) -> None:  # noqa: ANN001
+    exit_code = cli.main(["launch-ui", "--dry-run", "--no-browser", "--port", "8509"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["command"][1:4] == ["-m", "streamlit", "run"]
+    assert "8509" in payload["command"]
+
+
 def test_cli_download_real_data_dry_run(capsys) -> None:  # noqa: ANN001
     exit_code = cli.main(
         [
@@ -188,3 +221,30 @@ def test_cli_validate_providers_network_smoke_uses_mock(monkeypatch, capsys) -> 
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["smoke_results"][0]["status"] == "success"
+
+
+def test_cli_validate_providers_network_smoke_skips_disabled(monkeypatch, capsys) -> None:  # noqa: ANN001
+    def fail_create_provider(name, settings):  # noqa: ANN001
+        raise AssertionError("disabled provider should not be instantiated")
+
+    monkeypatch.setattr(
+        cli,
+        "list_available_providers",
+        lambda settings: [
+            {
+                "name": "polygon",
+                "enabled": False,
+                "configured": True,
+                "requires_api_key": True,
+                "market_types": ["equity"],
+                "status": "configured_but_disabled",
+            }
+        ],
+    )
+    monkeypatch.setattr(cli, "create_market_data_provider", fail_create_provider)
+
+    exit_code = cli.main(["validate-providers", "--network-smoke"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["smoke_results"] == [{"provider": "polygon", "status": "skipped_disabled"}]

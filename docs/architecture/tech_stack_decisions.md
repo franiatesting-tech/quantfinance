@@ -6,6 +6,8 @@ Iteration 006 adds no new dependencies. It uses the existing pandas-based diagno
 
 Iteration 007 adds no new dependencies. It uses existing `requests` and `python-dotenv` for keyed read-only providers.
 
+Iteration 008 adds optional UI dependencies under the `ui` extra only. Core tests and CLI paths do not require Streamlit to start, and UI tests do not make network calls.
+
 | Dependencia | Estado | Motivo | Riesgo | Decision |
 | --- | --- | --- | --- | --- |
 | `numpy` | USADA | Calculo numerico vectorial. | Bajo; dependencia core. | Mantener. |
@@ -16,6 +18,8 @@ Iteration 007 adds no new dependencies. It uses existing `requests` and `python-
 | `yfinance` | APROBADA_ITERACION_005 | Datos diarios de ETFs, acciones e indices para research. | No oficial, cobertura/licencia variables. | Usar como research provider, documentar fallos por ticker. |
 | `python-dotenv` | APROBADA_ITERACION_005 | Carga local de `.env` sin hardcodear secrets. | Puede ocultar dependencias de entorno si se usa mal. | Permitida; `.env` nunca se versiona. |
 | `pandas-market-calendars` | APROBADA_ITERACION_005 | Calendarios bursatiles para validacion equity diaria futura. | Cobertura y reglas de calendario deben revisarse. | Permitida; uso operativo avanzado pendiente. |
+| `streamlit` | APROBADA_ITERACION_008_UI_EXTRA | UI local read-only para inspeccionar settings publicos, providers y reports. | Puede confundirse con consola de ejecucion si se agregan botones operativos. | Mantener solo bajo extra `ui`; no ejecutar descargas/trading desde la UI. |
+| `plotly` | APROBADA_ITERACION_008_UI_EXTRA | Graficos locales para provider status, universo, riesgo y reports. | Dependencia visual; no debe bloquear pipeline core. | Mantener bajo extra `ui` y testear chart builders sin red. |
 | `ccxt` | NO_APROBADA_ITERACION_005 | Normalizacion de exchanges crypto. | Superficie amplia y posible acceso a trading. | No instalar. |
 | `duckdb` | EVALUAR_FUTURO | Query local sobre datasets grandes. | Nueva capa de almacenamiento. | Evaluar cuando CSV sea insuficiente. |
 | `polars` | EVALUAR_FUTURO | DataFrames rapidos/lazy. | Conversiones pandas/polars y complejidad. | No instalar todavia. |
@@ -29,3 +33,5 @@ Iteration 007 adds no new dependencies. It uses existing `requests` and `python-
 ## Dependency Gate
 
 Any future dependency must have a specific module, security review, tests, and documentation update before being added to `pyproject.toml`.
+
+Iteration 008 deliberately does not add a diagramming dependency; the conceptual flow uses Streamlit Graphviz support and plain tables.

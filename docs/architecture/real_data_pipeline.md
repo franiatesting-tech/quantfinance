@@ -29,6 +29,7 @@ The pipeline is read-only and research-only. It downloads or mocks daily market 
 11. Write generated JSON reports under ignored `reports/generated/`.
 12. Compare conservative and aggressive profiles on the same dataset when requested.
 13. Append trial metadata to the overfitting registry.
+14. Inspect local manifests and reports from the read-only UI when requested by the user.
 
 ## Reports
 
@@ -37,6 +38,7 @@ The pipeline is read-only and research-only. It downloads or mocks daily market 
 | Coverage/data quality | `data/registry/<dataset>/<version>/data_quality_report.json` | Symbol coverage, date range, gaps, warnings, provider metadata, backtest suitability | Ignored |
 | Backtest | `reports/generated/*_report.json` | Strategy and benchmark metrics after costs | Ignored |
 | Profile comparison | `reports/generated/*_profile_comparison.json` | Conservative/aggressive comparison and drawdown target warnings | Ignored |
+| UI status | CLI JSON output from `ui-status` | Provider/report/readiness summary with no secrets | Not persisted by default |
 
 ## Safety Boundaries
 
@@ -49,6 +51,7 @@ The pipeline is read-only and research-only. It downloads or mocks daily market 
 - No futures, perpetuals, margin, funding-real, or leverage-real logic.
 - No paper trading.
 - No live trading.
+- No automatic downloads, backtests, or network smoke tests from the UI.
 
 ## Failure Handling
 
@@ -73,3 +76,14 @@ py -3 -m quant_platform.cli download-real-data --config configs/universe_etfs_cr
 ```
 
 The commands never print API key values. `validate-providers --network-smoke` may call configured providers and reports sanitized success/failure status.
+
+## Local UI Inspection
+
+```powershell
+py -3 -m quant_platform.cli ui-status
+py -3 -m quant_platform.cli launch-ui --host localhost --port 8501
+```
+
+The UI reads existing local artifacts only. It can show provider rows, configured booleans, dataset manifests, data quality reports, backtest reports, profile comparisons, and the explicit safety policy. Any operation that would contact providers remains a separate CLI command and must be run explicitly outside the UI.
+
+The UI can explain formulas and show charts from local JSON reports. If a backtest report does not include time series such as `equity_curve` or `net_returns`, the UI shows aggregate metrics and states that curve charts require those series in a future pipeline. This prevents inventing data for visualization.
