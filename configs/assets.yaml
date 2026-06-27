@@ -1,0 +1,13 @@
+# Synthetic universe placeholder. No real data source is connected in this phase.
+universes:
+  synthetic_core:
+    description: Synthetic assets for unit and integration tests.
+    assets:
+      - asset_id: SYN_EQ_001
+        market_type: equity
+        currency: USD
+        venue: SIM
+      - asset_id: SYN_CRYPTO_001
+        market_type: crypto
+        currency: USD
+        venue: SIM

@@ -1,0 +1,7 @@
+# Placeholder limits for future simulated backtests. These are not production limits.
+risk_limits:
+  max_single_asset_weight: 0.25
+  max_gross_leverage: 1.0
+  max_daily_turnover: 0.5
+  max_drawdown: 0.2
+  min_liquidity_usd: 1000000

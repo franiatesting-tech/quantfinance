@@ -1,0 +1,38 @@
+project:
+  git_remote: "https://github.com/franiatesting-tech/quantfinance"
+  base_currency: "USD"
+  initial_capital: 10000
+  live_trading_allowed: false
+  paper_trading_allowed: false
+
+research_scope:
+  frequency: "1d"
+  equity_scope:
+    - "US_ETFS"
+    - "US_EQUITIES"
+    - "EUROPE_ETFS"
+    - "SPAIN_EQUITIES"
+    - "INDICES"
+  crypto_scope:
+    - "SPOT"
+  futures_or_perpetuals: false
+  funding_enabled: false
+
+risk_profiles:
+  conservative:
+    target_max_drawdown: 0.15
+    max_single_asset_weight: 0.20
+    max_gross_leverage: 1.0
+    max_turnover: 0.30
+  aggressive:
+    target_max_drawdown: 0.30
+    max_single_asset_weight: 0.35
+    max_gross_leverage: 1.0
+    max_turnover: 0.60
+
+data_policy:
+  use_real_data: true
+  providers_must_be_free_or_public: true
+  read_only: true
+  store_raw_data_locally: true
+  store_processed_data_locally: true

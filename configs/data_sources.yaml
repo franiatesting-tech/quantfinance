@@ -1,0 +1,7 @@
+# Only synthetic fixtures are allowed during the foundation iteration.
+data_sources:
+  synthetic:
+    enabled: true
+    type: fixture
+    uses_api_keys: false
+    live_trading: false

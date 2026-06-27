@@ -1,0 +1,12 @@
+# Backtest defaults for future simulated runs. No engine is implemented in this iteration.
+backtest:
+  initial_capital: 1000000
+  base_currency: USD
+  execution_lag_bars: 1
+  commission_bps: 1.0
+  spread_bps: 2.0
+  slippage_bps: 2.0
+  funding_bps: 0.0
+  annualization:
+    equity_daily: 252
+    crypto_daily: 365

@@ -1,0 +1,21 @@
+# Decisions Needed
+
+Estado: decisiones principales cerradas por el usuario para Iteration 005. Se habilita investigacion read-only con datos reales y dinero ficticio; paper trading y trading real siguen prohibidos.
+
+| ID | Decision | Opciones | Estado | Recomendacion tecnica | Impacto si no se decide | Archivos afectados | Bloquea avance |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| DEC-001 | Inicializar Git local | si; no | DECIDIDO_SI_GIT_LOCAL | Si. Usar commits pequenos y rama `main`. | Menor trazabilidad si no se mantiene disciplina de commits. | `.git/`, auditoria, README | No bloquea pruebas; requerido para release profesional. |
+| DEC-002 | Crear repo remoto en GitHub | si; no | DECIDIDO_GITHUB_REMOTO | Remoto definido: `https://github.com/franiatesting-tech/quantfinance`. | Sin push no hay backup remoto. | remoto GitHub, docs de contribucion futuros | No bloquea codigo local. |
+| DEC-003 | Universo inicial | ETFs US; acciones US; crypto majors; ETFs + crypto majors | DECIDIDO_ETFS_CRYPTO_MAJORS | ETFs + crypto majors, ampliando Europa/Espana progresivamente. | Watchlists deben revisarse por cobertura real. | `configs/universe_etfs_crypto_daily.yaml` | No bloquea core; guia providers reales. |
+| DEC-004 | Frecuencia inicial | diaria; horaria; intradia minuto | DECIDIDO_DIARIO | Diaria. | No cubre intradia ni microestructura. | configs, providers, reports | No bloquea. |
+| DEC-005 | Moneda base | USD; EUR | DECIDIDO_USD_INICIAL | USD inicial. | Reporting EUR queda pendiente. | `.env.example`, settings, reports, configs | No bloquea. |
+| DEC-006 | Proveedor de datos bolsa | Stooq; Yahoo/yfinance; Alpha Vantage; Polygon/IEX/Nasdaq Data Link de pago | DECIDIDO_PROVEEDORES_GRATUITOS_EQUITY_READ_ONLY | `yfinance` read-only para research inicial. | Licencia/calidad de Yahoo deben revisarse antes de uso profesional. | providers, tech stack | No bloquea tests; condiciona datos reales. |
+| DEC-007 | Proveedor de datos crypto | CoinGecko; Binance public API; CCXT; CryptoCompare; proveedor de pago | DECIDIDO_CRYPTO_SPOT_READ_ONLY | Binance public spot para OHLCV; CoinGecko metadata placeholder. | Rate limits/cobertura deben documentarse. | providers, universe | No bloquea tests. |
+| DEC-008 | Anadir dependencias de datos | no anadir; `yfinance`; `ccxt`; `requests`; `python-dotenv` | AUTORIZADAS_DEPENDENCIAS_CONTROLADAS | Agregar solo dependencias justificadas y testeadas. | Mayor superficie de mantenimiento. | `pyproject.toml`, tech stack docs | No bloquea. |
+| DEC-009 | Anadir dependencias de almacenamiento | CSV actual; DuckDB; Parquet/pyarrow; Polars | MANTENER_CSV_POR_AHORA_EVALUAR_DUCKDB_PARQUET | CSV registry por ahora. | Menor eficiencia para datasets grandes. | data registry | No bloquea. |
+| DEC-010 | Limites de riesgo iniciales | max peso por activo; max gross leverage; max turnover; max drawdown; minimum liquidity | DECIDIDO_DOS_PERFILES_RIESGO | Conservador 15% DD, agresivo 30% DD. | Liquidez minima sigue pendiente. | `configs/risk_profiles.yaml` | No bloquea. |
+| DEC-011 | Capital inicial simulado | 10k; 100k; 1M | DECIDIDO_10000_USD | 10000 USD. | Capacity profesional requiere escenarios adicionales. | settings, backtest config | No bloquea. |
+| DEC-012 | Costes por defecto | `commission_bps`; `spread_bps`; `slippage_bps`; `funding_bps` | DECIDIDO_COSTES_DEFAULT_CONFIGURABLES | Defaults razonables por mercado/perfil. | Necesitan calibracion real por broker/exchange en futuro. | `configs/risk_profiles.yaml`, costs | No bloquea. |
+| DEC-013 | Permiso para paper trading futuro | no; si solo sandbox | NO_IMPLEMENTAR_PAPER_TRADING_TODAVIA | No implementar todavia. | Paper trading queda fuera de alcance. | settings, execution futuros | Bloquea paper trading intencionalmente. |
+| DEC-014 | Permiso para trading real | no; si | TRADING_REAL_PROHIBIDO | NO. Debe quedar bloqueado por defecto. | Ningun modulo debe enviar ordenes. | `.env.example`, settings, guardrails | Bloquea trading real. |
+| DEC-015 | PDFs faltantes a incorporar | Rockafellar-Uryasev CVaR; Longstaff-Schwartz LSMC; Heston 1993; Black-Scholes/Merton originales | PDFS_LOCALES_EN_DOCS_REFERENCIABLES | Usar PDFs locales como bibliografia, no subirlos sin licencia/permisos. | Falta extraccion por pagina/seccion. | literature map, audit docs | No bloquea core. |

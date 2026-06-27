@@ -1,0 +1,57 @@
+base_currency: "USD"
+frequency: "1d"
+
+equity_universe:
+  us_core_etfs:
+    - SPY
+    - QQQ
+    - IWM
+    - VTI
+    - EFA
+    - EEM
+    - TLT
+    - GLD
+    - VNQ
+  sector_or_style_etfs:
+    - XLK
+    - XLF
+    - XLE
+    - XLI
+    - XLV
+  europe_spain_proxies:
+    - VGK
+    - FEZ
+    - EWP
+  us_large_caps_watchlist:
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - GOOGL
+    - META
+    - TSLA
+    - JPM
+  spain_watchlist_yfinance:
+    - SAN.MC
+    - BBVA.MC
+    - ITX.MC
+    - IBE.MC
+    - TEF.MC
+  indices_watchlist:
+    - "^GSPC"
+    - "^IXIC"
+    - "^DJI"
+    - "^STOXX50E"
+    - "^IBEX"
+
+crypto_universe:
+  binance_spot_usdt:
+    - BTCUSDT
+    - ETHUSDT
+    - SOLUSDT
+    - BNBUSDT
+    - XRPUSDT
+    - ADAUSDT
+    - DOGEUSDT
+    - AVAXUSDT
+    - LINKUSDT
