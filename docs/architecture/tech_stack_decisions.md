@@ -2,6 +2,8 @@
 
 Iteration 005 adds only the minimum dependencies needed for read-only real data research. Trading, broker, optimizer, deep learning, experiment-tracking, and large-storage dependencies remain out of scope.
 
+Iteration 006 adds no new dependencies. It uses the existing pandas-based diagnostics, registry, and reporting stack.
+
 | Dependencia | Estado | Motivo | Riesgo | Decision |
 | --- | --- | --- | --- | --- |
 | `numpy` | USADA | Calculo numerico vectorial. | Bajo; dependencia core. | Mantener. |

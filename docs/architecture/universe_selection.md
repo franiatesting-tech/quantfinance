@@ -31,4 +31,11 @@ Iteration 005 starts with a daily research universe combining liquid ETFs and cr
 - Survivorship bias remains open because the first universe uses currently visible assets.
 - Delisted equities, inactive ETFs, and delisted crypto pairs are not yet represented.
 - Provider outages and ticker-specific failures must be recorded, not hidden.
+- Coverage reports must be reviewed after every real download because provider coverage can differ by ticker and date.
+- Complete close matrices can drop dates for assets with shorter histories, which affects backtest interpretation.
+- The conservative 15% and aggressive 30% drawdown targets are risk review thresholds, not guaranteed outcomes.
 - Any future production-grade universe must include liquidity, listing history, currency, venue, and tradability metadata.
+
+## Iteration 006 Smoke Coverage
+
+The first controlled real-data smoke downloaded 8 symbols successfully: `SPY`, `QQQ`, `IWM`, `VTI`, `EFA`, `BTCUSDT`, `ETHUSDT`, and `SOLUSDT`. No symbol failed in that smoke, but equity calendar gaps were flagged for review.

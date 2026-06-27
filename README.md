@@ -1,6 +1,6 @@
 # Quant Platform
 
-Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical VaR, historical Expected Shortfall, performance metrics, portfolio baselines, transaction costs, vectorized backtesting, temporal validation splits, benchmark suite, VaR exception backtesting, anti-overfitting registry, settings guardrails, and the Iteration 005 read-only real data research layer.
+Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical VaR, historical Expected Shortfall, performance metrics, portfolio baselines, transaction costs, vectorized backtesting, temporal validation splits, benchmark suite, VaR exception backtesting, anti-overfitting registry, settings guardrails, read-only real data ingestion, data quality reports, and profile comparison.
 
 ## Current State
 
@@ -12,6 +12,7 @@ Auditable Quant Finance research platform for equity and crypto experiments. The
 - Crypto spot OHLCV uses Binance public `/api/v3/klines` through `requests`.
 - CoinGecko is a metadata placeholder, not the primary OHLCV source.
 - Tests for providers, ingestion, CLI, and the real-data backtest pipeline use mocks and do not require network access.
+- Data quality reports summarize coverage, gaps, failed symbols, assumptions, and suitability for demo backtests.
 - No predictive ML, deep learning, DRL, CVXPY, Heston, Black-Scholes operative pricing, MLflow, or dashboards are implemented.
 
 ## Local Setup
@@ -36,6 +37,7 @@ py -3 -c "import collections, csv, pathlib; p=pathlib.Path(r'..\\docs\\audit\\01
 py -3 -m quant_platform.cli show-settings
 py -3 -m quant_platform.cli download-real-data --config configs/universe_etfs_crypto_daily.yaml --start 2020-01-01 --end 2024-12-31 --limit-equity 5 --limit-crypto 3 --dry-run
 py -3 -m quant_platform.cli run-backtest-demo --dataset-id real_daily_demo --version v1 --profile conservative
+py -3 -m quant_platform.cli compare-profiles --dataset-id real_daily_demo --version v1 --config configs/universe_etfs_crypto_daily.yaml --risk-config configs/risk_profiles.yaml --dry-run
 ```
 
 The CLI loads safe settings and refuses live-trading scope.
@@ -70,6 +72,11 @@ Current safety defaults:
 
 Do not commit `.env`, `.env.*`, raw data, processed data, generated reports, caches, or PDFs without explicit license approval.
 
+Generated real-data artifacts are local only:
+
+- `data/registry/`: CSV datasets, manifests, and data quality reports.
+- `reports/generated/`: backtest reports, profile comparison reports, and trial registries.
+
 ## Initial Universe And Risk Profiles
 
 - Universe: ETFs, US equities watchlist, Europe/Spain proxies, indices, and crypto majors spot.
@@ -77,7 +84,16 @@ Do not commit `.env`, `.env.*`, raw data, processed data, generated reports, cac
 - Base currency: USD.
 - Initial simulated capital: 10000.
 - Risk profiles: `conservative` with approximate 15% target max drawdown and `aggressive` with approximate 30% target max drawdown.
+- Drawdown targets are evaluation thresholds, not guarantees. The demo backtest does not enforce drawdown control.
 - Storage: CSV registry remains the default; DuckDB/Parquet remain future evaluations.
+
+## Reports
+
+- Coverage/data quality report: generated beside the local registry manifest as `data_quality_report.json`; it answers whether data coverage is adequate and what assumptions/warnings apply.
+- Backtest report: generated under `reports/generated/`; it reports strategy and benchmark metrics after costs.
+- Profile comparison report: generated under `reports/generated/`; it compares conservative and aggressive profiles on the same dataset and benchmark set.
+
+Free public providers can revise data, fail per ticker, impose rate limits, and have licensing constraints. yfinance adjusted-price handling and corporate actions require review before professional use. Current universes can have survivorship bias.
 
 ## Mathematical Safety Rules
 
@@ -96,6 +112,7 @@ Do not commit `.env`, `.env.*`, raw data, processed data, generated reports, cac
 - User decisions: `docs/development/decisions_needed.md`.
 - Git setup: `docs/development/git_setup.md`.
 - Iteration 005 notes: `docs/development/iteration_005_real_data_readonly_research.md`.
+- Iteration 006 notes: `docs/development/iteration_006_real_data_validation.md`.
 - Provider architecture: `docs/architecture/real_data_pipeline.md`.
 - Universe policy: `docs/architecture/universe_selection.md`.
 - Local PDF bibliography metadata: `docs/literature/bibliography_map.md`.

@@ -14,6 +14,7 @@ from quant_platform.data.ingestion import (
     load_universe_config,
     register_real_dataset,
 )
+from quant_platform.pipelines.profile_comparison import run_profile_comparison_pipeline
 from quant_platform.pipelines.real_data_backtest import run_real_data_backtest_pipeline
 
 
@@ -49,6 +50,16 @@ def build_parser() -> argparse.ArgumentParser:
     backtest.add_argument("--risk-profiles", default="configs/risk_profiles.yaml")
     backtest.add_argument("--report-dir", default="reports/generated")
     backtest.add_argument("--trial-registry", default="reports/generated/strategy_trials.jsonl")
+
+    compare = subparsers.add_parser("compare-profiles")
+    compare.add_argument("--dataset-id", required=True)
+    compare.add_argument("--version", required=True)
+    compare.add_argument("--config", required=True)
+    compare.add_argument("--risk-config", default="configs/risk_profiles.yaml")
+    compare.add_argument("--registry-dir", default="data/registry")
+    compare.add_argument("--report-dir", default="reports/generated")
+    compare.add_argument("--trial-registry", default="reports/generated/strategy_trials.jsonl")
+    compare.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -107,6 +118,19 @@ def main(argv: list[str] | None = None) -> int:
             profile_name=args.profile,
             report_dir=args.report_dir,
             trial_registry_path=args.trial_registry,
+        )
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "compare-profiles":
+        summary = run_profile_comparison_pipeline(
+            dataset_id=args.dataset_id,
+            version=args.version,
+            universe_config=args.config,
+            risk_profiles_config=args.risk_config,
+            registry_dir=args.registry_dir,
+            output_dir=args.report_dir,
+            trial_registry_path=args.trial_registry,
+            dry_run=args.dry_run,
         )
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0

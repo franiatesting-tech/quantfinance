@@ -43,7 +43,7 @@ class RealDataBacktestPipelineError(ValueError):
 
 def _close_matrix(market_bars: pd.DataFrame) -> pd.DataFrame:
     bars = market_bars.copy()
-    bars["timestamp"] = pd.to_datetime(bars["timestamp"], utc=True)
+    bars["timestamp"] = pd.to_datetime(bars["timestamp"], utc=True, format="mixed")
     close = bars.pivot(index="timestamp", columns="asset_id", values="close").sort_index()
     close = close.astype(float).dropna(axis=0, how="any")
     if close.shape[0] < 2:

@@ -12,6 +12,7 @@ Iteration 005 keeps the platform in local research mode. Real data providers are
 - Provider tests must use mocks or local fixtures, never live HTTP calls.
 - No module may call broker, account, private exchange, order, margin, futures, or perpetual endpoints.
 - Raw data, processed data, generated reports, and PDFs remain outside Git unless explicitly approved.
+- Data quality reports generated from real data remain outside Git with the datasets/reports they describe.
 
 ## Current Environment Variables
 
@@ -44,6 +45,10 @@ Iteration 005 keeps the platform in local research mode. Real data providers are
 
 The repository ignores `.env`, `.env.*`, caches, local data folders, generated reports, and PDFs under `docs/`. `.env.example`, YAML configs, bibliography metadata, and documentation are safe to commit.
 
+Ignored local output folders include `data/raw/`, `data/processed/`, `data/registry/`, and `reports/generated/`.
+
 ## Data Safety
 
 Real data ingestion writes only local research datasets and registry metadata. It must record source, venue, symbols, success/failure lists, coverage, and retrieval metadata. Failed symbols are recorded without failing the whole universe.
+
+Iteration 006 adds local JSON data quality reports. They may include provider symbols, coverage, warnings, and generated paths, but no secrets. They are still excluded from Git because they describe real downloaded data.

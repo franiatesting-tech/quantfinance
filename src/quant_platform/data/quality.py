@@ -103,8 +103,13 @@ def validate_available_at_not_before_timestamp(df: pd.DataFrame) -> pd.DataFrame
     """Validate availability time is not earlier than the observation timestamp."""
 
     validate_required_columns(df, ("timestamp", "available_at"))
-    timestamp = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
-    available_at = pd.to_datetime(df["available_at"], utc=True, errors="coerce")
+    timestamp = pd.to_datetime(df["timestamp"], utc=True, errors="coerce", format="mixed")
+    available_at = pd.to_datetime(
+        df["available_at"],
+        utc=True,
+        errors="coerce",
+        format="mixed",
+    )
     invalid = timestamp.isna() | available_at.isna() | (available_at < timestamp)
     if invalid.any():
         raise MarketDataQualityError(

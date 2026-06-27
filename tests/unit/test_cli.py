@@ -58,3 +58,53 @@ def test_cli_run_backtest_demo_uses_pipeline(monkeypatch, capsys) -> None:  # no
     assert exit_code == 0
     assert payload["dataset_id"] == "demo"
     assert payload["final_equity"] == 10001.0
+
+
+def test_cli_compare_profiles_dry_run_uses_pipeline(monkeypatch, capsys) -> None:  # noqa: ANN001
+    def fake_pipeline(**kwargs):  # noqa: ANN001
+        return {"dry_run": kwargs["dry_run"], "dataset_id": kwargs["dataset_id"]}
+
+    monkeypatch.setattr(cli, "run_profile_comparison_pipeline", fake_pipeline)
+
+    exit_code = cli.main(
+        [
+            "compare-profiles",
+            "--dataset-id",
+            "demo",
+            "--version",
+            "v1",
+            "--config",
+            "configs/universe_etfs_crypto_daily.yaml",
+            "--risk-config",
+            "configs/risk_profiles.yaml",
+            "--dry-run",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["dry_run"] is True
+    assert payload["dataset_id"] == "demo"
+
+
+def test_cli_compare_profiles_missing_dataset_fails_without_network(tmp_path) -> None:  # noqa: ANN001
+    try:
+        cli.main(
+            [
+                "compare-profiles",
+                "--dataset-id",
+                "missing",
+                "--version",
+                "v1",
+                "--config",
+                "configs/universe_etfs_crypto_daily.yaml",
+                "--risk-config",
+                "configs/risk_profiles.yaml",
+                "--registry-dir",
+                str(tmp_path / "registry"),
+            ]
+        )
+    except ValueError as exc:
+        assert "Dataset manifest not found" in str(exc)
+    else:  # pragma: no cover - explicit failure path for clarity.
+        raise AssertionError("missing dataset should fail before any network call")

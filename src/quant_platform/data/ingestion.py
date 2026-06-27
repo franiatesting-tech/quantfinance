@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,10 @@ from quant_platform.data.providers.binance_public_provider import BinancePublicS
 from quant_platform.data.providers.yfinance_provider import YFinanceDailyProvider
 from quant_platform.data.registry import RegisteredDataset, register_dataset
 from quant_platform.data.schemas import DatasetMetadata, Frequency, MarketType
+from quant_platform.reporting.data_quality_report import (
+    build_data_quality_report,
+    write_data_quality_report,
+)
 
 
 class IngestionError(ValueError):
@@ -125,7 +130,15 @@ def download_combined_daily_universe(
         data=data,
         successful_symbols=equity.successful_symbols + crypto.successful_symbols,
         failed_symbols=failed,
-        metadata={"equity": equity.metadata, "crypto": crypto.metadata},
+        metadata={
+            "equity": equity.metadata,
+            "crypto": crypto.metadata,
+            "successful_symbols": list(equity.successful_symbols + crypto.successful_symbols),
+            "failed_symbols": failed,
+            "start": start,
+            "end": end,
+            "frequency": Frequency.DAILY.value,
+        },
     )
 
 
@@ -139,7 +152,16 @@ def register_real_dataset(
     """Register a read-only downloaded dataset in the local registry."""
 
     if response.data.empty:
-        raise IngestionError("Cannot register an empty dataset response.")
+        detail = (
+            "all symbols failed or no rows were returned" if response.failed_symbols else "empty"
+        )
+        raise IngestionError(f"Cannot register dataset: {detail}.")
+    provider_metadata = {
+        **response.metadata,
+        "successful_symbols": list(response.successful_symbols),
+        "failed_symbols": response.failed_symbols,
+    }
+    quality_report = build_data_quality_report(response.data, provider_metadata)
     metadata = DatasetMetadata(
         dataset_id=dataset_id,
         version=version,
@@ -152,4 +174,34 @@ def register_real_dataset(
             f"failed={response.failed_symbols}"
         ),
     )
-    return register_dataset(response.data, metadata, registry_dir=registry_dir, overwrite=False)
+    registered = register_dataset(
+        response.data,
+        metadata,
+        registry_dir=registry_dir,
+        overwrite=False,
+    )
+    report_path = write_data_quality_report(
+        quality_report,
+        registered.manifest_path.parent / "data_quality_report.json",
+    )
+    _append_quality_metadata_to_manifest(registered.manifest_path, quality_report, report_path.name)
+    return registered
+
+
+def _append_quality_metadata_to_manifest(
+    manifest_path: Path,
+    quality_report: dict[str, Any],
+    quality_report_file: str,
+) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["quality_report_file"] = quality_report_file
+    manifest["coverage_metadata"] = {
+        "symbols_total": quality_report["symbols_total"],
+        "symbols_successful": quality_report["symbols_successful"],
+        "symbols_failed": quality_report["symbols_failed"],
+        "date_range": quality_report["date_range"],
+        "failed_checks": quality_report["failed_checks"],
+        "warnings": quality_report["warnings"],
+        "suitable_for_backtest_demo": quality_report["suitable_for_backtest_demo"],
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")

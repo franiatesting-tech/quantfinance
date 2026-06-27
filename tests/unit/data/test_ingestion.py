@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import pytest
 
@@ -71,6 +73,8 @@ def test_download_combined_daily_universe_records_success_and_failures() -> None
 
     assert len(response.successful_symbols) == 2
     assert response.failed_symbols
+    assert response.metadata["successful_symbols"]
+    assert response.metadata["failed_symbols"]
     assert set(response.data["market_type"]) == {"equity", "crypto"}
 
 
@@ -79,3 +83,31 @@ def test_register_real_dataset_rejects_empty_response(tmp_path) -> None:  # noqa
 
     with pytest.raises(ValueError, match="empty"):
         register_real_dataset(response, tmp_path, "empty", "v1")
+
+
+def test_register_real_dataset_reports_total_failure(tmp_path) -> None:  # noqa: ANN001
+    response = OHLCVResponse(
+        data=pd.DataFrame(),
+        successful_symbols=(),
+        failed_symbols={"SPY": "No rows returned."},
+    )
+
+    with pytest.raises(ValueError, match="all symbols failed"):
+        register_real_dataset(response, tmp_path, "empty", "v1")
+
+
+def test_register_real_dataset_writes_coverage_metadata_and_quality_report(tmp_path) -> None:  # noqa: ANN001
+    response = OHLCVResponse(
+        data=bars("SPY", MarketType.EQUITY, "fake_equity", "FAKE_EQ"),
+        successful_symbols=("SPY",),
+        failed_symbols={"BAD": "simulated"},
+        metadata={"provider": "fake"},
+    )
+
+    registered = register_real_dataset(response, tmp_path, "real_daily_demo", "v1")
+
+    manifest = json.loads(registered.manifest_path.read_text(encoding="utf-8"))
+    report_path = registered.manifest_path.parent / manifest["quality_report_file"]
+    assert report_path.exists()
+    assert manifest["coverage_metadata"]["symbols_successful"] == ["SPY"]
+    assert manifest["coverage_metadata"]["symbols_failed"] == ["BAD"]

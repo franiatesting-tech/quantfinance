@@ -148,7 +148,9 @@ def load_dataset(
         raise DatasetRegistryError(f"Unsupported data format: {registered.data_format}")
     if not registered.data_path.exists():
         raise DatasetRegistryError(f"Registered data file not found: {registered.data_path}")
-    df = pd.read_csv(registered.data_path, parse_dates=["timestamp", "available_at"])
+    df = pd.read_csv(registered.data_path)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, format="mixed")
+    df["available_at"] = pd.to_datetime(df["available_at"], utc=True, format="mixed")
     run_market_data_quality_checks(df)
     return df, registered
 
