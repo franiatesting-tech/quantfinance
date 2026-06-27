@@ -16,6 +16,14 @@ from quant_platform.ui.charts import (
     provider_status_figure,
     quality_coverage_figure,
     returns_histogram_figure,
+    terminal_backtest_equity_figure,
+    terminal_correlation_heatmap,
+    terminal_exposure_figure,
+    terminal_frontier_figure,
+    terminal_monte_carlo_fan_figure,
+    terminal_options_figure,
+    terminal_price_figure,
+    terminal_var_figure,
     transaction_cost_breakdown_figure,
     universe_mix_figure,
     var_es_conceptual_figure,
@@ -33,6 +41,8 @@ from quant_platform.ui.view_models import (
 
 SECTIONS = (
     "Inicio",
+    "Quant Terminal",
+    "Academic Reports",
     "Flujo conceptual",
     "Estado del sistema",
     "Providers",
@@ -94,6 +104,8 @@ def main() -> None:
 
     routes = {
         "Inicio": _render_home,
+        "Quant Terminal": _render_quant_terminal,
+        "Academic Reports": _render_academic_reports,
         "Flujo conceptual": _render_conceptual_flow,
         "Estado del sistema": _render_system_status,
         "Providers": _render_providers,
@@ -114,11 +126,11 @@ def _render_header(st) -> None:  # noqa: ANN001
         """
         <div class="hero">
           <div>
-            <p class="eyebrow">Local Quant Finance Research</p>
-            <h1>Quant Platform Research Console</h1>
+            <p class="eyebrow">Professional Quant Finance Research</p>
+            <h1>Quant Platform Terminal</h1>
             <p class="hero-copy">
-              Esta aplicacion sirve para investigar estrategias con datos historicos y dinero
-              ficticio. No compra ni vende nada.
+              Terminal local para analizar tres acciones, portfolio, Monte Carlo, VaR,
+              backtesting, opciones, renta fija, tipos y exposicion. No compra ni vende nada.
             </p>
           </div>
           <div class="hero-badge">Research-only<br/>No trading</div>
@@ -175,6 +187,276 @@ def _render_home(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) -> No
     st.dataframe(_safe_df(pd, safe_command_catalog()), use_container_width=True, hide_index=True)
     with st.expander("Estado UI JSON publico"):
         st.json(status)
+
+
+def _render_quant_terminal(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) -> None:  # noqa: ARG001, ANN001
+    st.subheader("Professional Quant Terminal")
+    reports = [
+        row
+        for row in snapshot["reports"]
+        if row.get("report_type") == "professional_quant_terminal"
+    ]
+    if not reports:
+        _empty_state(st, "No hay professional quant terminal report local.", _terminal_commands())
+        st.info(
+            "Genera el JSON primero. La UI no descarga datos ni ejecuta simulaciones por si sola."
+        )
+        return
+    report_row = _select_report(st, reports, "Professional terminal report")
+    report = read_json_report(report_row["path"])
+    universe = report.get("universe", {})
+    data = report.get("data", {})
+    warnings = data.get("warnings", []) if isinstance(data, dict) else []
+    _kpi_row(
+        st,
+        [
+            ("Stocks", ", ".join(universe.get("selected_stocks", []))),
+            ("Benchmark", str(universe.get("benchmark", "N/A"))),
+            ("Data mode", str(data.get("mode", "unknown"))),
+            ("Observations", str(data.get("aligned_observations", "N/A"))),
+            ("Warnings", str(len(warnings))),
+        ],
+    )
+    if warnings:
+        st.warning(" | ".join(str(item) for item in warnings))
+
+    tabs = st.tabs(
+        [
+            "A Stock Detail",
+            "B Portfolio",
+            "C Monte Carlo",
+            "D VaR",
+            "E Backtesting",
+            "F Options",
+            "G Fixed Income & Rates",
+            "H Hedging & Exposure",
+            "I Spreadsheet & Methods",
+        ]
+    )
+    with tabs[0]:
+        _render_terminal_stock_detail(st, pd, report)
+    with tabs[1]:
+        _render_terminal_portfolio(st, pd, report)
+    with tabs[2]:
+        _render_terminal_monte_carlo(st, pd, report)
+    with tabs[3]:
+        _render_terminal_var(st, pd, report)
+    with tabs[4]:
+        _render_terminal_backtesting(st, pd, report)
+    with tabs[5]:
+        _render_terminal_options(st, pd, report)
+    with tabs[6]:
+        _render_terminal_fixed_income_rates(st, pd, report)
+    with tabs[7]:
+        _render_terminal_hedging_exposure(st, pd, report)
+    with tabs[8]:
+        _render_terminal_methods(st, pd, report)
+
+
+def _render_academic_reports(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) -> None:  # noqa: ARG001, ANN001
+    st.subheader("Academic Reports")
+    reports = [
+        row for row in snapshot["reports"] if row.get("report_type") == "academic_stock_report"
+    ]
+    if not reports:
+        _empty_state(
+            st, "No hay informes academicos por stock generados.", _academic_report_commands()
+        )
+        st.info(
+            "La UI solo inspecciona documentos existentes. Usa el CLI explicito para generarlos."
+        )
+        return
+    labels = [
+        f"{row.get('summary', {}).get('asset_id', row['name'])} | {row['name']}" for row in reports
+    ]
+    selected = st.selectbox("Stock academic report", labels)
+    report_row = reports[labels.index(selected)]
+    metadata = read_json_report(report_row["path"])
+    summary = metadata.get("summary", "")
+    outputs = metadata.get("outputs", {}) if isinstance(metadata.get("outputs"), dict) else {}
+    figures = metadata.get("figures", {}) if isinstance(metadata.get("figures"), dict) else {}
+    _kpi_row(
+        st,
+        [
+            ("Stock", str(metadata.get("asset_id", "N/A"))),
+            ("Formats", ", ".join(str(fmt) for fmt in metadata.get("formats", []))),
+            ("Figures", str(len(figures))),
+            ("Research-only", str(metadata.get("research_only", True))),
+        ],
+    )
+    st.markdown("### Resumen")
+    st.write(summary)
+    st.markdown("### Rutas")
+    st.dataframe(_safe_df(pd, outputs), use_container_width=True, hide_index=True)
+    if outputs.get("html"):
+        st.info(
+            "Para abrir el HTML local, abre esta ruta desde el navegador o explorador de archivos:"
+        )
+        st.code(str(outputs["html"]), language="text")
+    st.markdown("### Figuras generadas")
+    figure_rows = [{"figure": name, "path": path} for name, path in figures.items()]
+    st.dataframe(_safe_df(pd, figure_rows), use_container_width=True, hide_index=True)
+    st.markdown("### Regenerar de forma explicita")
+    for command in _academic_report_commands(asset=str(metadata.get("asset_id", "AAPL"))):
+        st.code(command, language="powershell")
+    with st.expander("Metadata JSON"):
+        st.json(metadata)
+
+
+def _render_terminal_stock_detail(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### A. Stock Individual")
+    assets = report.get("single_assets", {})
+    symbols = sorted(str(symbol) for symbol in assets) if isinstance(assets, dict) else []
+    if not symbols:
+        st.warning("No stock analytics in report.")
+        return
+    symbol = st.selectbox("Stock", symbols)
+    payload = assets[symbol]
+    _kpi_row(
+        st,
+        [
+            ("Annual return", _format_metric(payload.get("annualized_return"))),
+            ("Annual vol", _format_metric(payload.get("annualized_volatility"))),
+            ("Sharpe", _format_metric(payload.get("sharpe_ratio"))),
+            ("Beta", _format_metric(payload.get("beta_to_benchmark"))),
+            ("Max DD", _format_metric(payload.get("max_drawdown"))),
+        ],
+    )
+    st.plotly_chart(terminal_price_figure(report), use_container_width=True)
+    metric_payload = {key: value for key, value in payload.items() if key != "series"}
+    st.dataframe(_safe_df(pd, metric_payload), use_container_width=True, hide_index=True)
+
+
+def _render_terminal_portfolio(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### B. Portfolio 3 Stocks")
+    portfolio = report.get("portfolio", {})
+    optimization = report.get("optimization", {})
+    equal_weight = portfolio.get("equal_weight", {}) if isinstance(portfolio, dict) else {}
+    max_sharpe = optimization.get("max_sharpe", {}) if isinstance(optimization, dict) else {}
+    _kpi_row(
+        st,
+        [
+            ("EW return", _format_metric(equal_weight.get("annualized_return"))),
+            ("EW vol", _format_metric(equal_weight.get("annualized_volatility"))),
+            ("EW Sharpe", _format_metric(equal_weight.get("sharpe_ratio"))),
+            ("Max-Sharpe vol", _format_metric(max_sharpe.get("annualized_volatility"))),
+            ("Grid portfolios", str(optimization.get("portfolio_count", "N/A"))),
+        ],
+    )
+    left, right = st.columns([1, 1.2])
+    with left:
+        st.plotly_chart(terminal_correlation_heatmap(report), use_container_width=True)
+    with right:
+        st.plotly_chart(terminal_frontier_figure(report), use_container_width=True)
+    st.markdown("#### Optimized weights")
+    st.dataframe(
+        _safe_df(
+            pd,
+            [
+                {
+                    "portfolio": "min_variance",
+                    **optimization.get("min_variance", {}).get("weights", {}),
+                },
+                {
+                    "portfolio": "max_sharpe",
+                    **optimization.get("max_sharpe", {}).get("weights", {}),
+                },
+            ],
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def _render_terminal_monte_carlo(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### C. Monte Carlo")
+    mc = report.get("monte_carlo", {})
+    _kpi_row(
+        st,
+        [
+            ("Paths", str(mc.get("path_count", "N/A"))),
+            ("Horizon", str(mc.get("horizon_days", "N/A"))),
+            ("Terminal mean", _format_metric(mc.get("terminal_mean"))),
+            ("Terminal p05", _format_metric(mc.get("terminal_p05"))),
+            ("Terminal p95", _format_metric(mc.get("terminal_p95"))),
+        ],
+    )
+    st.plotly_chart(terminal_monte_carlo_fan_figure(report), use_container_width=True)
+    st.caption("Modelo parametrico/educativo; no predice precios futuros.")
+
+
+def _render_terminal_var(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### D. VaR")
+    st.plotly_chart(terminal_var_figure(report), use_container_width=True)
+    st.dataframe(
+        _safe_df(pd, _flatten_var_rows(report.get("var", {}))),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.info("Convencion: VaR y ES se muestran como perdidas positivas, no retornos negativos.")
+
+
+def _render_terminal_backtesting(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### E. Backtesting")
+    st.plotly_chart(terminal_backtest_equity_figure(report), use_container_width=True)
+    rows = []
+    for strategy, payload in report.get("backtesting", {}).items():
+        metrics = payload.get("metrics", {}) if isinstance(payload, dict) else {}
+        rows.append({"strategy": strategy, **metrics})
+    st.dataframe(_safe_df(pd, rows), use_container_width=True, hide_index=True)
+    st.caption("El motor aplica execution lag t+1 para reducir look-ahead bias.")
+
+
+def _render_terminal_options(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### F. Options")
+    st.plotly_chart(terminal_options_figure(report), use_container_width=True)
+    options = report.get("options", {})
+    rows = []
+    for symbol, payload in options.items():
+        rows.append(
+            {
+                "symbol": symbol,
+                **{key: value for key, value in payload.items() if key != "payoff_profile"},
+            }
+        )
+    st.dataframe(_safe_df(pd, rows), use_container_width=True, hide_index=True)
+    st.warning("Sin option chain real: Black-Scholes, Greeks y CRR son modelos parametrizados.")
+
+
+def _render_terminal_fixed_income_rates(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### G. Fixed Income & Rates")
+    st.dataframe(
+        _safe_df(pd, report.get("fixed_income", {})), use_container_width=True, hide_index=True
+    )
+    rates = report.get("rates_derivatives", {})
+    st.dataframe(_safe_df(pd, rates.get("swap", {})), use_container_width=True, hide_index=True)
+    st.dataframe(
+        _safe_df(pd, rates.get("sofr_futures", {})), use_container_width=True, hide_index=True
+    )
+    st.warning("Pricing real requiere curvas, calendarios, convenciones y contract specs reales.")
+
+
+def _render_terminal_hedging_exposure(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### H. Hedging & Exposure")
+    st.plotly_chart(terminal_exposure_figure(report), use_container_width=True)
+    st.dataframe(_safe_df(pd, report.get("hedging", {})), use_container_width=True, hide_index=True)
+    exposure = report.get("exposure", {})
+    st.dataframe(
+        _safe_df(pd, {key: value for key, value in exposure.items() if key != "profile"}),
+        use_container_width=True,
+        hide_index=True,
+    )
+    st.caption("Hedge y exposure son parametrizados; no hay contratos ni CSA reales.")
+
+
+def _render_terminal_methods(st, pd, report: dict[str, Any]) -> None:  # noqa: ANN001
+    st.markdown("### I. Spreadsheet / Export / Bibliography")
+    exports = report.get("exports", {})
+    st.info(f"Frontier CSV: `{exports.get('frontier_csv', 'N/A')}`")
+    st.dataframe(_safe_df(pd, report.get("methods", [])), use_container_width=True, hide_index=True)
+    st.dataframe(_safe_df(pd, report.get("safety", {})), use_container_width=True, hide_index=True)
+    with st.expander("Professional terminal report JSON"):
+        st.json(report)
 
 
 def _render_conceptual_flow(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) -> None:  # noqa: ARG001, ANN001
@@ -477,6 +759,57 @@ def _comparison_commands() -> list[str]:
             "--version v1 --config configs/universe_etfs_crypto_daily.yaml"
         )
     ]
+
+
+def _terminal_commands() -> list[str]:
+    return [
+        (
+            "py -3 -m quant_platform.cli build-quant-terminal-report --config "
+            "configs/quant_terminal_3_stocks.yaml"
+        ),
+        (
+            "py -3 -m quant_platform.cli build-quant-terminal-report --config "
+            "configs/quant_terminal_3_stocks.yaml --offline-synthetic"
+        ),
+    ]
+
+
+def _academic_report_commands(asset: str = "AAPL") -> list[str]:
+    return [
+        (
+            "py -3 -m quant_platform.cli generate-stock-academic-report "
+            f"--asset {asset} --terminal-report "
+            "reports/generated/quant_terminal/3stocks_10y_report.json "
+            "--output-dir reports/generated/academic_stock_reports "
+            "--format md --format html --include-figures --overwrite"
+        ),
+        (
+            "py -3 -m quant_platform.cli generate-all-stock-academic-reports "
+            "--terminal-report reports/generated/quant_terminal/3stocks_10y_report.json "
+            "--output-dir reports/generated/academic_stock_reports "
+            "--format md --format html --include-figures --overwrite"
+        ),
+    ]
+
+
+def _flatten_var_rows(var_payload: object) -> list[dict[str, object]]:
+    if not isinstance(var_payload, dict):
+        return []
+    rows = []
+    for model, payload in var_payload.items():
+        if not isinstance(payload, dict):
+            continue
+        if model in {"alpha", "loss_sign_convention"}:
+            continue
+        rows.append(
+            {
+                "model": model,
+                "var": payload.get("var"),
+                "expected_shortfall": payload.get("expected_shortfall"),
+                "model_status": payload.get("model_status"),
+            }
+        )
+    return rows
 
 
 def _safe_df(pd, rows: object):  # noqa: ANN001, ANN202

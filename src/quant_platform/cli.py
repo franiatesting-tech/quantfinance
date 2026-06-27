@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -22,6 +23,12 @@ from quant_platform.data.providers.factory import (
 from quant_platform.data.schemas import MarketType
 from quant_platform.pipelines.profile_comparison import run_profile_comparison_pipeline
 from quant_platform.pipelines.real_data_backtest import run_real_data_backtest_pipeline
+from quant_platform.reporting.academic_stock_report import (
+    build_stock_academic_report_model,
+    write_all_stock_academic_reports,
+    write_stock_academic_report,
+)
+from quant_platform.research.report import build_and_write_quant_terminal_report
 from quant_platform.ui.actions import build_ui_status, launch_ui_command
 
 
@@ -88,6 +95,42 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--report-dir", default="reports/generated")
     compare.add_argument("--trial-registry", default="reports/generated/strategy_trials.jsonl")
     compare.add_argument("--dry-run", action="store_true")
+
+    quant_terminal = subparsers.add_parser("build-quant-terminal-report")
+    quant_terminal.add_argument("--config", required=True)
+    quant_terminal.add_argument("--report-dir", default="reports/generated/quant_terminal")
+    quant_terminal.add_argument("--export-dir", default="reports/generated/portfolio_optimization")
+    quant_terminal.add_argument("--provider", default="yfinance")
+    quant_terminal.add_argument("--offline-synthetic", action="store_true")
+    quant_terminal.add_argument("--dry-run", action="store_true")
+
+    stock_report = subparsers.add_parser("generate-stock-academic-report")
+    stock_report.add_argument("--asset", required=True)
+    stock_report.add_argument(
+        "--terminal-report",
+        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+    )
+    stock_report.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
+    stock_report.add_argument("--format", action="append", dest="formats", choices=("md", "html"))
+    stock_report.add_argument("--include-figures", action="store_true")
+    stock_report.add_argument("--overwrite", action="store_true")
+
+    all_stock_reports = subparsers.add_parser("generate-all-stock-academic-reports")
+    all_stock_reports.add_argument(
+        "--terminal-report",
+        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+    )
+    all_stock_reports.add_argument(
+        "--output-dir", default="reports/generated/academic_stock_reports"
+    )
+    all_stock_reports.add_argument(
+        "--format",
+        action="append",
+        dest="formats",
+        choices=("md", "html"),
+    )
+    all_stock_reports.add_argument("--include-figures", action="store_true")
+    all_stock_reports.add_argument("--overwrite", action="store_true")
     return parser
 
 
@@ -220,6 +263,98 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
+    if args.command == "build-quant-terminal-report":
+        if args.dry_run:
+            print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "config": args.config,
+                        "report_dir": args.report_dir,
+                        "export_dir": args.export_dir,
+                        "provider": args.provider,
+                        "offline_synthetic": args.offline_synthetic,
+                        "network_auto_run": False,
+                        "research_only": True,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        try:
+            summary = build_and_write_quant_terminal_report(
+                config_path=args.config,
+                settings=settings,
+                output_dir=args.report_dir,
+                export_dir=args.export_dir,
+                provider_name=args.provider,
+                offline_synthetic=args.offline_synthetic,
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "generate-stock-academic-report":
+        try:
+            terminal_report = _load_terminal_report(args.terminal_report)
+            model = build_stock_academic_report_model(terminal_report, args.asset)
+            summary = write_stock_academic_report(
+                model,
+                output_dir=args.output_dir,
+                formats=_normalized_formats(args.formats),
+                include_figures=args.include_figures,
+                overwrite=args.overwrite,
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "generate-all-stock-academic-reports":
+        try:
+            terminal_report = _load_terminal_report(args.terminal_report)
+            summaries = write_all_stock_academic_reports(
+                terminal_report,
+                output_dir=args.output_dir,
+                formats=_normalized_formats(args.formats),
+                include_figures=args.include_figures,
+                overwrite=args.overwrite,
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(
+            json.dumps(
+                {
+                    "report_count": len(summaries),
+                    "reports": summaries,
+                    "research_only": True,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return 0
     parser.error("Unknown command")
     return 2
 
@@ -248,9 +383,7 @@ def _validate_providers(settings, network_smoke: bool) -> dict[str, object]:  # 
         if name not in {"alpha_vantage", "polygon", "cryptocompare"}:
             continue
         try:
-            market_type = (
-                MarketType.CRYPTO if name == "cryptocompare" else MarketType.EQUITY
-            )
+            market_type = MarketType.CRYPTO if name == "cryptocompare" else MarketType.EQUITY
             symbol = "BTC/USD" if market_type == MarketType.CRYPTO else "SPY"
             provider_instance = create_market_data_provider(name, settings)
             response = provider_instance.download_ohlcv(
@@ -286,6 +419,22 @@ def _sanitize_error(exc: Exception) -> str:
     for marker in ("apikey", "api_key", "apiKey", "token", "key"):
         message = message.replace(marker, "credential_param")
     return message
+
+
+def _load_terminal_report(path: str | Path) -> dict[str, object]:
+    report_path = Path(path)
+    if not report_path.exists():
+        raise FileNotFoundError(f"Terminal report not found: {report_path}")
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("Terminal report must be a JSON object.")
+    return payload
+
+
+def _normalized_formats(formats: list[str] | None) -> tuple[str, ...]:
+    if not formats:
+        return ("md", "html")
+    return tuple(dict.fromkeys(formats))
 
 
 if __name__ == "__main__":

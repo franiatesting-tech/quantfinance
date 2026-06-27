@@ -69,3 +69,63 @@ def test_time_series_and_cost_charts_accept_simple_data() -> None:
     assert drawdown.data
     assert histogram.data
     assert costs.data
+
+
+def test_terminal_chart_builders_accept_professional_report_payload() -> None:
+    report = {
+        "single_assets": {
+            "AAPL": {
+                "series": [
+                    {"timestamp": "2024-01-01", "price": 100.0},
+                    {"timestamp": "2024-01-02", "price": 101.0},
+                ]
+            }
+        },
+        "portfolio": {"correlation_matrix": [{"asset_id": "AAPL", "AAPL": 1.0}]},
+        "optimization": {
+            "frontier": [
+                {
+                    "annualized_return": 0.1,
+                    "annualized_volatility": 0.2,
+                    "sharpe_ratio": 0.5,
+                }
+            ],
+            "min_variance": {"annualized_return": 0.1, "annualized_volatility": 0.2},
+            "max_sharpe": {"annualized_return": 0.1, "annualized_volatility": 0.2},
+            "capital_allocation_line": [{"annualized_return": 0.0, "annualized_volatility": 0.0}],
+        },
+        "monte_carlo": {
+            "fan_chart": [{"step": 1, "p5": 0.9, "p25": 0.95, "p50": 1.0, "p75": 1.05, "p95": 1.1}]
+        },
+        "var": {
+            "historical": {"var": 0.02, "expected_shortfall": 0.03},
+            "parametric_normal": {"var": 0.025, "expected_shortfall": 0.035},
+        },
+        "backtesting": {
+            "buy_and_hold": {"equity_curve": [{"timestamp": "2024-01-01", "equity": 10000.0}]}
+        },
+        "options": {"AAPL": {"black_scholes_call": 10.0, "black_scholes_put": 5.0}},
+        "exposure": {
+            "profile": [
+                {
+                    "step": 1,
+                    "expected_exposure": 100.0,
+                    "expected_negative_exposure": 50.0,
+                    "pfe": 250.0,
+                }
+            ]
+        },
+    }
+
+    figures = [
+        charts.terminal_price_figure(report),
+        charts.terminal_correlation_heatmap(report),
+        charts.terminal_frontier_figure(report),
+        charts.terminal_monte_carlo_fan_figure(report),
+        charts.terminal_var_figure(report),
+        charts.terminal_backtest_equity_figure(report),
+        charts.terminal_options_figure(report),
+        charts.terminal_exposure_figure(report),
+    ]
+
+    assert all(figure.data for figure in figures)

@@ -62,13 +62,27 @@ def test_discover_reports_classifies_backtest_and_profile_reports(tmp_path) -> N
     report_dir.mkdir()
     backtest = {"final_equity": 10001.0, "max_drawdown": -0.1, "metadata": {}}
     comparison = {"profiles": {"conservative": {}, "aggressive": {}}, "comparison_table": []}
+    academic = {
+        "report_type": "academic_stock_report_metadata",
+        "asset_id": "AAPL",
+        "outputs": {"md": "AAPL.md", "html": "AAPL.html"},
+        "figures": {"price_history": "price_history.html"},
+    }
     (report_dir / "backtest.json").write_text(json.dumps(backtest), encoding="utf-8")
     (report_dir / "comparison.json").write_text(json.dumps(comparison), encoding="utf-8")
+    (report_dir / "academic.json").write_text(json.dumps(academic), encoding="utf-8")
 
     rows = discover_reports(report_dir)
 
-    assert {row["report_type"] for row in rows} == {"backtest", "profile_comparison"}
+    assert {row["report_type"] for row in rows} == {
+        "academic_stock_report",
+        "backtest",
+        "profile_comparison",
+    }
     assert classify_report(read_json_report(report_dir / "backtest.json")) == "backtest"
+    assert (
+        classify_report(read_json_report(report_dir / "academic.json")) == "academic_stock_report"
+    )
 
 
 def test_load_trial_registry_handles_invalid_lines(tmp_path) -> None:  # noqa: ANN001

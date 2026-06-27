@@ -191,6 +191,120 @@ def test_cli_compare_profiles_missing_dataset_fails_without_network(tmp_path) ->
         raise AssertionError("missing dataset should fail before any network call")
 
 
+def test_cli_build_quant_terminal_report_dry_run(capsys) -> None:  # noqa: ANN001
+    exit_code = cli.main(
+        [
+            "build-quant-terminal-report",
+            "--config",
+            "configs/quant_terminal_3_stocks.yaml",
+            "--dry-run",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["dry_run"] is True
+    assert payload["network_auto_run"] is False
+    assert payload["research_only"] is True
+
+
+def test_cli_build_quant_terminal_report_uses_pipeline(monkeypatch, capsys, tmp_path) -> None:  # noqa: ANN001
+    def fake_builder(**kwargs):  # noqa: ANN001
+        return {
+            "report_path": str(tmp_path / "report.json"),
+            "frontier_csv_path": str(tmp_path / "frontier.csv"),
+            "data_mode": "offline_synthetic"
+            if kwargs["offline_synthetic"]
+            else "provider_yfinance",
+            "symbols": ["AAPL", "MSFT", "NVDA"],
+            "warnings": [],
+            "research_only": True,
+        }
+
+    monkeypatch.setattr(cli, "build_and_write_quant_terminal_report", fake_builder)
+
+    exit_code = cli.main(
+        [
+            "build-quant-terminal-report",
+            "--config",
+            "configs/quant_terminal_3_stocks.yaml",
+            "--offline-synthetic",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["data_mode"] == "offline_synthetic"
+    assert payload["research_only"] is True
+
+
+def test_cli_generate_stock_academic_report_from_local_json(capsys, tmp_path) -> None:  # noqa: ANN001
+    terminal_report = tmp_path / "terminal.json"
+    terminal_report.write_text(json.dumps(_sample_academic_terminal_report()), encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "generate-stock-academic-report",
+            "--asset",
+            "AAPL",
+            "--terminal-report",
+            str(terminal_report),
+            "--output-dir",
+            str(tmp_path / "academic"),
+            "--format",
+            "md",
+            "--overwrite",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["asset_id"] == "AAPL"
+    assert payload["research_only"] is True
+    assert (tmp_path / "academic" / "AAPL" / "AAPL_academic_report.md").exists()
+
+
+def test_cli_generate_all_stock_academic_reports_from_local_json(capsys, tmp_path) -> None:  # noqa: ANN001
+    terminal_report = tmp_path / "terminal.json"
+    terminal_report.write_text(json.dumps(_sample_academic_terminal_report()), encoding="utf-8")
+
+    exit_code = cli.main(
+        [
+            "generate-all-stock-academic-reports",
+            "--terminal-report",
+            str(terminal_report),
+            "--output-dir",
+            str(tmp_path / "academic"),
+            "--format",
+            "html",
+            "--overwrite",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["report_count"] == 1
+    assert payload["research_only"] is True
+    assert (tmp_path / "academic" / "AAPL" / "AAPL_academic_report.html").exists()
+
+
+def test_cli_generate_stock_academic_report_missing_base_report_fails(capsys, tmp_path) -> None:  # noqa: ANN001
+    exit_code = cli.main(
+        [
+            "generate-stock-academic-report",
+            "--asset",
+            "AAPL",
+            "--terminal-report",
+            str(tmp_path / "missing.json"),
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 1
+    assert payload["status"] == "failed"
+    assert "Terminal report not found" in payload["error"]
+
+
 def test_cli_validate_providers_network_smoke_uses_mock(monkeypatch, capsys) -> None:  # noqa: ANN001
     class FakeProvider:
         def download_ohlcv(self, request):  # noqa: ANN001
@@ -248,3 +362,34 @@ def test_cli_validate_providers_network_smoke_skips_disabled(monkeypatch, capsys
     payload = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert payload["smoke_results"] == [{"provider": "polygon", "status": "skipped_disabled"}]
+
+
+def _sample_academic_terminal_report() -> dict[str, object]:
+    stock = {
+        "asset_id": "AAPL",
+        "data_used": {
+            "provider": "synthetic",
+            "data_mode": "offline_synthetic",
+            "frequency": "1d",
+            "currency": "USD",
+            "benchmark": "SPY",
+            "risk_free_proxy": "^IRX",
+            "risk_free_rate_annual": 0.0,
+            "start_timestamp": "2024-01-01",
+            "end_timestamp": "2024-01-02",
+            "observations": 2,
+        },
+        "data_quality": {},
+        "metrics": {"annualized_return": 0.1, "annualized_volatility": 0.2},
+        "var": {},
+        "monte_carlo": {},
+        "backtesting_results": {},
+        "options_theoretical_analytics": {},
+    }
+    return {
+        "metadata": {"report_version": "test"},
+        "data_provenance": {},
+        "universe": {"selected_stocks": ["AAPL"]},
+        "stocks": {"AAPL": stock},
+        "bibliography": [],
+    }

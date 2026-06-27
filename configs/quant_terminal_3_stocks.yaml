@@ -1,0 +1,61 @@
+selected_stocks:
+  - AAPL
+  - MSFT
+  - NVDA
+fallback_stocks:
+  - AMZN
+  - GOOGL
+  - META
+  - JPM
+benchmark:
+  symbol: SPY
+risk_free_proxy:
+  symbol: "^IRX"
+frequency: "1d"
+lookback_years: 10
+base_currency: "USD"
+risk_free_rate_annual: 0.0
+monte_carlo:
+  horizon_days: 252
+  n_paths: 1000
+  seed: 42
+  block_size: 20
+  max_paths_ui: 100
+optimization:
+  grid_step: 0.05
+  max_weight: 1.0
+backtesting:
+  initial_capital: 10000
+  short_window: 50
+  long_window: 200
+  momentum_lookback_days: 252
+  momentum_skip_days: 21
+options:
+  maturity_years: 1.0
+  dividend_yield: 0.0
+  binomial_steps: 100
+fixed_income:
+  face_value: 1000
+  coupon_rate: 0.04
+  yield_to_maturity: 0.045
+  maturity_years: 5
+  frequency: 2
+  yield_bump: 0.0001
+rates_derivatives:
+  notional: 1000000
+  fixed_rate: 0.04
+  floating_forward_rate: 0.038
+  discount_rate: 0.035
+  maturity_years: 5
+  payments_per_year: 2
+  sofr_futures_price: 95.25
+hedging:
+  exposure_value: 1000000
+  futures_contract_value: 200000
+exposure:
+  n_paths: 1000
+  n_steps: 20
+  seed: 42
+  initial_exposure: 0.0
+  drift: 0.0
+  volatility: 100000

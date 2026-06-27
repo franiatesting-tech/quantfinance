@@ -52,8 +52,7 @@ def universe_mix_figure(universe: dict[str, Any]):  # noqa: ANN201
                 ],
                 customdata=[str(group.get("asset_class", "unknown")) for group in groups],
                 hovertemplate=(
-                    "Group=%{x}<br>Asset class=%{customdata}<br>"
-                    "Symbols=%{y}<extra></extra>"
+                    "Group=%{x}<br>Asset class=%{customdata}<br>Symbols=%{y}<extra></extra>"
                 ),
             )
         ]
@@ -315,12 +314,283 @@ def quality_coverage_figure(report: dict[str, Any]):  # noqa: ANN201
     return dataset_rows_by_asset_figure(coverage if isinstance(coverage, list) else [])
 
 
+def terminal_price_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build multi-stock price chart from a professional terminal report."""
+
+    go = _plotly_go()
+    assets = report.get("single_assets", {})
+    if not isinstance(assets, dict) or not assets:
+        return _empty_figure("Stock Price Panel")
+    figure = go.Figure()
+    for symbol, payload in assets.items():
+        if not isinstance(payload, dict):
+            continue
+        rows = [row for row in payload.get("series", []) if isinstance(row, dict)]
+        if not rows:
+            continue
+        figure.add_trace(
+            go.Scatter(
+                name=str(symbol),
+                x=[row.get("timestamp") for row in rows],
+                y=[row.get("price") for row in rows],
+                mode="lines",
+                hovertemplate="%{fullData.name}<br>Date=%{x}<br>Price=%{y:.2f}<extra></extra>",
+            )
+        )
+    if not figure.data:
+        return _empty_figure("Stock Price Panel")
+    _apply_layout(figure, "A. Stock Individual Price Panel", "Date", "Adjusted close")
+    _add_note(figure, "Per-stock analysis uses adjusted daily closes when provider supplies them.")
+    return figure
+
+
+def terminal_correlation_heatmap(report: dict[str, Any]):  # noqa: ANN201
+    """Build portfolio correlation heatmap."""
+
+    rows = report.get("portfolio", {}).get("correlation_matrix", [])
+    clean_rows = [row for row in rows if isinstance(row, dict)]
+    if not clean_rows:
+        return _empty_figure("Portfolio Correlation")
+    assets = [str(row.get("asset_id")) for row in clean_rows]
+    z = [[_clean_float(row.get(asset)) for asset in assets] for row in clean_rows]
+    go = _plotly_go()
+    figure = go.Figure(
+        data=[
+            go.Heatmap(
+                x=assets,
+                y=assets,
+                z=z,
+                colorscale="Tealrose",
+                zmin=-1,
+                zmax=1,
+                hovertemplate="Asset X=%{x}<br>Asset Y=%{y}<br>Corr=%{z:.3f}<extra></extra>",
+            )
+        ]
+    )
+    _apply_layout(figure, "B. Portfolio Correlation Matrix", "Asset", "Asset")
+    return figure
+
+
+def terminal_frontier_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build efficient frontier scatter plot."""
+
+    optimization = report.get("optimization", {})
+    rows = [row for row in optimization.get("frontier", []) if isinstance(row, dict)]
+    if not rows:
+        return _empty_figure("Efficient Frontier")
+    go = _plotly_go()
+    figure = go.Figure(
+        data=[
+            go.Scatter(
+                x=[row.get("annualized_volatility") for row in rows],
+                y=[row.get("annualized_return") for row in rows],
+                mode="markers",
+                marker={
+                    "size": 8,
+                    "color": [row.get("sharpe_ratio") for row in rows],
+                    "colorscale": "Viridis",
+                    "showscale": True,
+                    "colorbar": {"title": "Sharpe"},
+                },
+                hovertemplate="Vol=%{x:.2%}<br>Return=%{y:.2%}<extra></extra>",
+                name="Grid portfolios",
+            )
+        ]
+    )
+    _add_named_portfolio_marker(figure, optimization.get("min_variance"), "Min variance", "#d6b35a")
+    _add_named_portfolio_marker(figure, optimization.get("max_sharpe"), "Max Sharpe", "#3dd6c6")
+    cal = [row for row in optimization.get("capital_allocation_line", []) if isinstance(row, dict)]
+    if cal:
+        figure.add_trace(
+            go.Scatter(
+                name="Capital allocation line",
+                x=[row.get("annualized_volatility") for row in cal],
+                y=[row.get("annualized_return") for row in cal],
+                mode="lines",
+                line={"color": "#f2f0df", "dash": "dot"},
+            )
+        )
+    _apply_layout(
+        figure, "B. Portfolio Optimization Frontier", "Annualized volatility", "Annualized return"
+    )
+    _add_note(figure, "Long-only grid search; no leverage and no solver dependency.")
+    return figure
+
+
+def terminal_monte_carlo_fan_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build Monte Carlo percentile fan chart."""
+
+    rows = [
+        row for row in report.get("monte_carlo", {}).get("fan_chart", []) if isinstance(row, dict)
+    ]
+    if not rows:
+        return _empty_figure("Monte Carlo Fan")
+    go = _plotly_go()
+    steps = [row.get("step") for row in rows]
+    figure = go.Figure()
+    for percentile, color, width in (
+        ("p5", "#d66a4a", 1),
+        ("p25", "#d6b35a", 1),
+        ("p50", "#3dd6c6", 3),
+        ("p75", "#d6b35a", 1),
+        ("p95", "#d66a4a", 1),
+    ):
+        figure.add_trace(
+            go.Scatter(
+                name=percentile.upper(),
+                x=steps,
+                y=[row.get(percentile) for row in rows],
+                mode="lines",
+                line={"color": color, "width": width},
+                hovertemplate=f"Step=%{{x}}<br>{percentile.upper()}=%{{y:.3f}}<extra></extra>",
+            )
+        )
+    _apply_layout(figure, "C. Monte Carlo Portfolio Fan", "Trading day", "Simulated wealth")
+    _add_note(figure, "Simulation is model output, not a prediction or recommendation.")
+    return figure
+
+
+def terminal_var_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build VaR/ES comparison chart."""
+
+    var_payload = report.get("var", {})
+    rows = []
+    for model in ("historical", "parametric_normal", "monte_carlo"):
+        payload = var_payload.get(model, {})
+        if isinstance(payload, dict):
+            rows.append({"model": model, "metric": "VaR", "value": payload.get("var")})
+            rows.append(
+                {
+                    "model": model,
+                    "metric": "Expected Shortfall",
+                    "value": payload.get("expected_shortfall"),
+                }
+            )
+    rows = [row for row in rows if _clean_float(row.get("value")) is not None]
+    if not rows:
+        return _empty_figure("VaR Models")
+    go = _plotly_go()
+    figure = go.Figure()
+    for metric, color in (("VaR", "#d6b35a"), ("Expected Shortfall", "#d66a4a")):
+        metric_rows = [row for row in rows if row["metric"] == metric]
+        figure.add_trace(
+            go.Bar(
+                name=metric,
+                x=[row["model"] for row in metric_rows],
+                y=[row["value"] for row in metric_rows],
+                marker_color=color,
+                hovertemplate="Model=%{x}<br>Loss=%{y:.2%}<extra></extra>",
+            )
+        )
+    _apply_layout(figure, "D. VaR / Expected Shortfall", "Model", "Positive loss")
+    figure.update_layout(barmode="group")
+    return figure
+
+
+def terminal_backtest_equity_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build multi-strategy backtest equity chart."""
+
+    backtests = report.get("backtesting", {})
+    if not isinstance(backtests, dict) or not backtests:
+        return _empty_figure("Backtest Equity")
+    go = _plotly_go()
+    figure = go.Figure()
+    for name, payload in backtests.items():
+        if not isinstance(payload, dict):
+            continue
+        rows = [row for row in payload.get("equity_curve", []) if isinstance(row, dict)]
+        if not rows:
+            continue
+        figure.add_trace(
+            go.Scatter(
+                name=str(name),
+                x=[row.get("timestamp") for row in rows],
+                y=[row.get("equity") for row in rows],
+                mode="lines",
+                hovertemplate="%{fullData.name}<br>Date=%{x}<br>Equity=%{y:.2f}<extra></extra>",
+            )
+        )
+    if not figure.data:
+        return _empty_figure("Backtest Equity")
+    _apply_layout(figure, "E. Backtesting Strategy Equity", "Date", "Simulated capital")
+    _add_note(figure, "Signals execute with explicit t+1 lag to avoid look-ahead bias.")
+    return figure
+
+
+def terminal_options_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build options price comparison across selected stocks."""
+
+    options = report.get("options", {})
+    if not isinstance(options, dict) or not options:
+        return _empty_figure("Options Analytics")
+    go = _plotly_go()
+    symbols = list(options)
+    figure = go.Figure()
+    for metric, color in (("black_scholes_call", "#3dd6c6"), ("black_scholes_put", "#d66a4a")):
+        figure.add_trace(
+            go.Bar(
+                name=metric,
+                x=symbols,
+                y=[options[symbol].get(metric) for symbol in symbols],
+                marker_color=color,
+                hovertemplate="Symbol=%{x}<br>Price=%{y:.4f}<extra></extra>",
+            )
+        )
+    _apply_layout(figure, "F. Options Parametric Prices", "Underlying", "Option price")
+    figure.update_layout(barmode="group")
+    _add_note(figure, "No option chain is used; this is a PARAMETRIC_EDUCATIONAL_MODEL.")
+    return figure
+
+
+def terminal_exposure_figure(report: dict[str, Any]):  # noqa: ANN201
+    """Build counterparty exposure profile chart."""
+
+    rows = [row for row in report.get("exposure", {}).get("profile", []) if isinstance(row, dict)]
+    if not rows:
+        return _empty_figure("Exposure Profile")
+    go = _plotly_go()
+    figure = go.Figure()
+    for metric, color in (
+        ("expected_exposure", "#3dd6c6"),
+        ("expected_negative_exposure", "#d6b35a"),
+        ("pfe", "#d66a4a"),
+    ):
+        figure.add_trace(
+            go.Scatter(
+                name=metric,
+                x=[row.get("step") for row in rows],
+                y=[row.get(metric) for row in rows],
+                mode="lines",
+                line={"color": color, "width": 3 if metric == "pfe" else 2},
+                hovertemplate="Step=%{x}<br>Exposure=%{y:.2f}<extra></extra>",
+            )
+        )
+    _apply_layout(figure, "H. Counterparty Exposure Profile", "Step", "Exposure")
+    _add_note(figure, "CSA, netting and legal terms are required for real exposure valuation.")
+    return figure
+
+
 def _plotly_go():  # noqa: ANN202
     try:
         import plotly.graph_objects as go
     except ImportError as exc:  # pragma: no cover - depends on optional extra.
         raise RuntimeError("Install the ui extra to use Plotly charts: .[ui]") from exc
     return go
+
+
+def _add_named_portfolio_marker(figure, row: object, name: str, color: str) -> None:  # noqa: ANN001
+    if not isinstance(row, dict):
+        return
+    figure.add_trace(
+        _plotly_go().Scatter(
+            name=name,
+            x=[row.get("annualized_volatility")],
+            y=[row.get("annualized_return")],
+            mode="markers",
+            marker={"size": 15, "color": color, "symbol": "diamond"},
+            hovertemplate=f"{name}<br>Vol=%{{x:.2%}}<br>Return=%{{y:.2%}}<extra></extra>",
+        )
+    )
 
 
 def _empty_figure(title: str, message: str = EMPTY_MESSAGE):  # noqa: ANN202

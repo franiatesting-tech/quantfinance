@@ -122,6 +122,10 @@ def classify_report(payload: dict[str, Any]) -> str:
         return "profile_comparison"
     if "provider_summaries" in payload:
         return "provider_comparison"
+    if payload.get("report_type") == "professional_quant_terminal":
+        return "professional_quant_terminal"
+    if payload.get("report_type") == "academic_stock_report_metadata":
+        return "academic_stock_report"
     if "coverage_by_asset" in payload and "suitable_for_backtest_demo" in payload:
         return "data_quality"
     if "final_equity" in payload and "metadata" in payload:
@@ -161,6 +165,25 @@ def summarize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "providers_compared": payload.get("providers_compared", []),
             "provider_count": len(payload.get("provider_summaries", [])),
+        }
+    if report_type == "professional_quant_terminal":
+        data = payload.get("data", {})
+        universe = payload.get("universe", {})
+        return {
+            "symbols": universe.get("selected_stocks", []),
+            "benchmark": universe.get("benchmark"),
+            "data_mode": data.get("mode"),
+            "warnings": len(data.get("warnings", [])) if isinstance(data, dict) else 0,
+        }
+    if report_type == "academic_stock_report":
+        outputs = payload.get("outputs", {})
+        figures = payload.get("figures", {})
+        return {
+            "asset_id": payload.get("asset_id"),
+            "formats": payload.get("formats", []),
+            "figure_count": len(figures) if isinstance(figures, dict) else 0,
+            "markdown_path": outputs.get("md") if isinstance(outputs, dict) else None,
+            "html_path": outputs.get("html") if isinstance(outputs, dict) else None,
         }
     return {"top_level_keys": sorted(str(key) for key in payload)[:8]}
 
