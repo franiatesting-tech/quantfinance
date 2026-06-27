@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from quant_platform.data.ingestion import (
+    IngestionError,
     download_combined_daily_universe,
     load_universe_config,
     register_real_dataset,
@@ -50,6 +51,11 @@ class FakeProvider:
         )
 
 
+class FailingProvider:
+    def download_ohlcv(self, request: OHLCVRequest) -> OHLCVResponse:
+        raise ValueError("simulated provider failure")
+
+
 def test_load_universe_config_reads_initial_universe() -> None:
     config = load_universe_config("configs/universe_etfs_crypto_daily.yaml")
 
@@ -76,6 +82,96 @@ def test_download_combined_daily_universe_records_success_and_failures() -> None
     assert response.metadata["successful_symbols"]
     assert response.metadata["failed_symbols"]
     assert set(response.data["market_type"]) == {"equity", "crypto"}
+
+
+def test_download_combined_daily_universe_uses_explicit_provider_name(monkeypatch) -> None:  # noqa: ANN001
+    config = load_universe_config("configs/universe_etfs_crypto_daily.yaml")
+
+    def fake_factory(name, settings, dataset_code=None):  # noqa: ANN001
+        assert name in {"polygon", "binance_public"}
+        if name == "polygon":
+            return FakeProvider(MarketType.EQUITY)
+        return FakeProvider(MarketType.CRYPTO)
+
+    monkeypatch.setattr("quant_platform.data.ingestion.create_market_data_provider", fake_factory)
+
+    response = download_combined_daily_universe(
+        config,
+        start="2024-01-01",
+        end="2024-01-03",
+        equity_provider_name="polygon",
+        crypto_provider_name="binance_public",
+        limit_equity=1,
+        limit_crypto=1,
+    )
+
+    assert response.metadata["equity"]["selected_provider"] == "polygon"
+
+
+def test_download_combined_daily_universe_missing_key_fails_clearly() -> None:
+    config = load_universe_config("configs/universe_etfs_crypto_daily.yaml")
+
+    with pytest.raises(IngestionError, match="alpha_vantage"):
+        download_combined_daily_universe(
+            config,
+            start="2024-01-01",
+            end="2024-01-03",
+            equity_provider_name="alpha_vantage",
+            crypto_provider=FakeProvider(MarketType.CRYPTO),
+            allow_fallback=False,
+            limit_equity=1,
+            limit_crypto=1,
+        )
+
+
+def test_download_combined_daily_universe_falls_back_to_yfinance(monkeypatch) -> None:  # noqa: ANN001
+    config = load_universe_config("configs/universe_etfs_crypto_daily.yaml")
+
+    def fake_factory(name, settings, dataset_code=None):  # noqa: ANN001
+        if name == "alpha_vantage":
+            return FailingProvider()
+        if name == "yfinance":
+            return FakeProvider(MarketType.EQUITY)
+        return FakeProvider(MarketType.CRYPTO)
+
+    monkeypatch.setattr("quant_platform.data.ingestion.create_market_data_provider", fake_factory)
+
+    response = download_combined_daily_universe(
+        config,
+        start="2024-01-01",
+        end="2024-01-03",
+        equity_provider_name="alpha_vantage",
+        crypto_provider=FakeProvider(MarketType.CRYPTO),
+        fallback_provider_name="yfinance",
+        limit_equity=1,
+        limit_crypto=1,
+    )
+
+    assert response.metadata["equity"]["selected_provider"] == "yfinance"
+    assert "fallback_reason" in response.metadata["equity"]
+
+
+def test_download_combined_daily_universe_without_fallback_raises(monkeypatch) -> None:  # noqa: ANN001
+    config = load_universe_config("configs/universe_etfs_crypto_daily.yaml")
+
+    def fake_factory(name, settings, dataset_code=None):  # noqa: ANN001
+        if name == "alpha_vantage":
+            return FailingProvider()
+        return FakeProvider(MarketType.CRYPTO)
+
+    monkeypatch.setattr("quant_platform.data.ingestion.create_market_data_provider", fake_factory)
+
+    with pytest.raises(IngestionError, match="alpha_vantage"):
+        download_combined_daily_universe(
+            config,
+            start="2024-01-01",
+            end="2024-01-03",
+            equity_provider_name="alpha_vantage",
+            crypto_provider=FakeProvider(MarketType.CRYPTO),
+            allow_fallback=False,
+            limit_equity=1,
+            limit_crypto=1,
+        )
 
 
 def test_register_real_dataset_rejects_empty_response(tmp_path) -> None:  # noqa: ANN001

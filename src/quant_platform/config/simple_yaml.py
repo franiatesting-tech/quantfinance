@@ -30,6 +30,11 @@ def _strip_comment(line: str) -> str:
 
 def _parse_scalar(value: str) -> Any:
     clean_value = value.strip()
+    if clean_value.startswith("[") and clean_value.endswith("]"):
+        inner = clean_value[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_scalar(item.strip()) for item in inner.split(",")]
     if clean_value in {"", "null", "Null", "NULL"}:
         return None
     if clean_value.lower() == "true":

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from quant_platform.config.settings import SettingsError, load_settings_from_env
+from quant_platform.config.settings import (
+    SettingsError,
+    load_settings_from_env,
+    public_settings_dict,
+)
 
 
 def test_load_settings_defaults_are_safe() -> None:
@@ -20,6 +24,11 @@ def test_load_settings_defaults_are_safe() -> None:
     assert settings.research.default_crypto_provider == "binance_public"
     assert settings.research.conservative_target_max_drawdown == pytest.approx(0.15)
     assert settings.research.aggressive_target_max_drawdown == pytest.approx(0.30)
+    assert not settings.data_providers.alpha_vantage_enabled
+    assert settings.provider_runtime.provider_http_timeout_seconds == pytest.approx(30.0)
+    assert settings.provider_runtime.provider_max_retries == 3
+    assert settings.provider_runtime.provider_retry_backoff_seconds == pytest.approx(2.0)
+    assert settings.provider_runtime.provider_cache_enabled
 
 
 def test_load_settings_parses_valid_booleans() -> None:
@@ -67,10 +76,11 @@ def test_api_keys_are_optional_and_not_required() -> None:
     settings = load_settings_from_env({"COINGECKO_ENABLED": "true"})
 
     assert settings.data_providers.coingecko_enabled
-    assert settings.data_providers.alpha_vantage_api_key == ""
-    assert settings.data_providers.polygon_api_key == ""
-    assert settings.data_providers.nasdaq_data_link_api_key == ""
-    assert settings.data_providers.cryptocompare_api_key == ""
+    assert settings.provider_credentials.alpha_vantage_api_key == ""
+    assert settings.provider_credentials.polygon_api_key == ""
+    assert settings.provider_credentials.nasdaq_data_link_api_key == ""
+    assert settings.provider_credentials.cryptocompare_api_key == ""
+    assert not settings.provider_credentials.alpha_vantage_configured
 
 
 def test_invalid_initial_capital_fails() -> None:
@@ -98,3 +108,66 @@ def test_conservative_drawdown_must_be_lower_than_aggressive() -> None:
 def test_empty_default_provider_fails() -> None:
     with pytest.raises(SettingsError, match="DEFAULT_EQUITY_PROVIDER"):
         load_settings_from_env({"DEFAULT_EQUITY_PROVIDER": " "})
+
+
+def test_missing_dotenv_file_does_not_fail(tmp_path) -> None:  # noqa: ANN001
+    settings = load_settings_from_env({}, dotenv_path=tmp_path / "missing.env")
+
+    assert settings.environment.name == "local"
+
+
+def test_present_keys_set_configured_true_without_public_secret_output() -> None:
+    settings = load_settings_from_env(
+        {
+            "ALPHA_VANTAGE_API_KEY": "alpha-secret",
+            "POLYGON_API_KEY": "polygon-secret",
+            "NASDAQ_DATA_LINK_API_KEY": "nasdaq-secret",
+            "CRYPTOCOMPARE_API_KEY": "crypto-secret",
+        }
+    )
+
+    assert settings.provider_credentials.alpha_vantage_configured
+    assert settings.provider_credentials.polygon_configured
+    assert settings.provider_credentials.nasdaq_data_link_configured
+    assert settings.provider_credentials.cryptocompare_configured
+    public_payload = str(public_settings_dict(settings))
+    repr_payload = repr(settings.provider_credentials)
+    assert "alpha-secret" not in public_payload
+    assert "polygon-secret" not in public_payload
+    assert "nasdaq-secret" not in public_payload
+    assert "crypto-secret" not in public_payload
+    assert "alpha-secret" not in repr_payload
+
+
+def test_empty_keys_set_configured_false() -> None:
+    settings = load_settings_from_env(
+        {
+            "ALPHA_VANTAGE_API_KEY": " ",
+            "POLYGON_API_KEY": "",
+        }
+    )
+
+    assert not settings.provider_credentials.alpha_vantage_configured
+    assert not settings.provider_credentials.polygon_configured
+
+
+def test_provider_enabled_without_key_is_incomplete_but_safe() -> None:
+    settings = load_settings_from_env({"POLYGON_ENABLED": "true", "POLYGON_API_KEY": ""})
+
+    assert settings.data_providers.polygon_enabled
+    assert not settings.provider_credentials.polygon_configured
+
+
+def test_provider_runtime_invalid_values_fail() -> None:
+    with pytest.raises(SettingsError, match="PROVIDER_HTTP_TIMEOUT_SECONDS"):
+        load_settings_from_env({"PROVIDER_HTTP_TIMEOUT_SECONDS": "0"})
+    with pytest.raises(SettingsError, match="PROVIDER_MAX_RETRIES"):
+        load_settings_from_env({"PROVIDER_MAX_RETRIES": "-1"})
+    with pytest.raises(SettingsError, match="PROVIDER_RETRY_BACKOFF_SECONDS"):
+        load_settings_from_env({"PROVIDER_RETRY_BACKOFF_SECONDS": "-0.1"})
+
+
+def test_provider_cache_flag_parses_boolean() -> None:
+    settings = load_settings_from_env({"PROVIDER_CACHE_ENABLED": "false"})
+
+    assert not settings.provider_runtime.provider_cache_enabled

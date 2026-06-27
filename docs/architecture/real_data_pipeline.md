@@ -8,6 +8,10 @@ The pipeline is read-only and research-only. It downloads or mocks daily market 
 | --- | --- | --- | --- | --- |
 | `yfinance` | Equity, ETF, index daily OHLCV | Public yfinance API | None | Implemented with mocked tests |
 | `binance_public` | Crypto spot daily OHLCV | Public `/api/v3/klines` | None | Implemented with mocked tests |
+| `alpha_vantage` | Equity/ETF daily adjusted OHLCV | `TIME_SERIES_DAILY_ADJUSTED` | `ALPHA_VANTAGE_API_KEY` | Implemented with mocked tests |
+| `polygon` | Equity/ETF daily aggregates | Daily aggregate endpoint | `POLYGON_API_KEY` | Implemented with mocked tests |
+| `nasdaq_data_link` | Configurable datasets | Dataset API | `NASDAQ_DATA_LINK_API_KEY` | Minimal provider, dataset code required |
+| `cryptocompare` | Crypto spot daily OHLCV | `histoday` | `CRYPTOCOMPARE_API_KEY` | Implemented with mocked tests |
 | `coingecko` | Future metadata/universe enrichment | Public metadata APIs | None | Placeholder, no OHLCV primary use |
 
 ## Flow
@@ -41,6 +45,7 @@ The pipeline is read-only and research-only. It downloads or mocks daily market 
 - No account endpoints.
 - No private exchange endpoints.
 - No API keys required.
+- API keys are optional for keyed read-only providers and must never be logged or committed.
 - No futures, perpetuals, margin, funding-real, or leverage-real logic.
 - No paper trading.
 - No live trading.
@@ -57,3 +62,14 @@ Provider failures are captured per symbol. A bad ticker does not fail the whole 
 - Crypto daily gaps are failed checks because spot crypto is expected to trade 24/7.
 - Pivoting a mixed dataset to a complete close matrix can silently reduce observations; coverage reports must be reviewed alongside backtest reports.
 - Drawdown targets in risk profiles are not guarantees.
+- Mixing providers in the same backtest can introduce timestamp, adjustment, and survivorship differences. Provider comparison reports should be reviewed first.
+
+## Using Keyed Read-Only Providers
+
+```powershell
+py -3 -m quant_platform.cli list-providers
+py -3 -m quant_platform.cli validate-providers
+py -3 -m quant_platform.cli download-real-data --config configs/universe_etfs_crypto_daily.yaml --start 2024-01-01 --end 2024-03-31 --limit-equity 2 --limit-crypto 2 --equity-provider polygon --crypto-provider cryptocompare
+```
+
+The commands never print API key values. `validate-providers --network-smoke` may call configured providers and reports sanitized success/failure status.

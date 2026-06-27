@@ -1,0 +1,43 @@
+providers:
+  yfinance:
+    enabled: true
+    requires_api_key: false
+    market_types: ["equity"]
+    priority: 30
+
+  binance_public:
+    enabled: true
+    requires_api_key: false
+    market_types: ["crypto"]
+    priority: 30
+
+  alpha_vantage:
+    enabled: true
+    requires_api_key: true
+    env_key: "ALPHA_VANTAGE_API_KEY"
+    market_types: ["equity"]
+    priority: 20
+
+  polygon:
+    enabled: true
+    requires_api_key: true
+    env_key: "POLYGON_API_KEY"
+    market_types: ["equity"]
+    priority: 10
+
+  nasdaq_data_link:
+    enabled: true
+    requires_api_key: true
+    env_key: "NASDAQ_DATA_LINK_API_KEY"
+    market_types: ["equity", "macro", "alternative"]
+    priority: 40
+    default_dataset_code: null
+
+  cryptocompare:
+    enabled: true
+    requires_api_key: true
+    env_key: "CRYPTOCOMPARE_API_KEY"
+    market_types: ["crypto"]
+    priority: 20
+
+priority_policy: "lower_number_preferred"

@@ -4,6 +4,8 @@ Iteration 005 adds only the minimum dependencies needed for read-only real data 
 
 Iteration 006 adds no new dependencies. It uses the existing pandas-based diagnostics, registry, and reporting stack.
 
+Iteration 007 adds no new dependencies. It uses existing `requests` and `python-dotenv` for keyed read-only providers.
+
 | Dependencia | Estado | Motivo | Riesgo | Decision |
 | --- | --- | --- | --- | --- |
 | `numpy` | USADA | Calculo numerico vectorial. | Bajo; dependencia core. | Mantener. |

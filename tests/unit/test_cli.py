@@ -12,6 +12,25 @@ def test_cli_show_settings_outputs_safe_defaults(capsys) -> None:  # noqa: ANN00
     payload = json.loads(captured.out)
     assert exit_code == 0
     assert payload["safety"]["allow_live_trading"] is False
+    assert "alpha_vantage_api_key" not in str(payload)
+
+
+def test_cli_list_providers_outputs_sanitized_json(capsys) -> None:  # noqa: ANN001
+    exit_code = cli.main(["list-providers"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert "providers" in payload
+    assert "secret" not in json.dumps(payload).lower()
+
+
+def test_cli_validate_providers_without_network(capsys) -> None:  # noqa: ANN001
+    exit_code = cli.main(["validate-providers"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["network_smoke"] is False
+    assert "smoke_results" not in payload
 
 
 def test_cli_download_real_data_dry_run(capsys) -> None:  # noqa: ANN001
@@ -36,6 +55,35 @@ def test_cli_download_real_data_dry_run(capsys) -> None:  # noqa: ANN001
     assert exit_code == 0
     assert payload["dry_run"] is True
     assert payload["limit_equity"] == 1
+    assert payload["fallback_enabled"] is True
+
+
+def test_cli_download_real_data_dry_run_accepts_provider_args(capsys) -> None:  # noqa: ANN001
+    exit_code = cli.main(
+        [
+            "download-real-data",
+            "--config",
+            "configs/universe_etfs_crypto_daily.yaml",
+            "--start",
+            "2024-01-01",
+            "--end",
+            "2024-01-31",
+            "--equity-provider",
+            "polygon",
+            "--crypto-provider",
+            "cryptocompare",
+            "--fallback-provider",
+            "yfinance",
+            "--no-fallback",
+            "--dry-run",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["equity_provider"] == "polygon"
+    assert payload["crypto_provider"] == "cryptocompare"
+    assert payload["fallback_enabled"] is False
 
 
 def test_cli_run_backtest_demo_uses_pipeline(monkeypatch, capsys) -> None:  # noqa: ANN001
@@ -108,3 +156,35 @@ def test_cli_compare_profiles_missing_dataset_fails_without_network(tmp_path) ->
         assert "Dataset manifest not found" in str(exc)
     else:  # pragma: no cover - explicit failure path for clarity.
         raise AssertionError("missing dataset should fail before any network call")
+
+
+def test_cli_validate_providers_network_smoke_uses_mock(monkeypatch, capsys) -> None:  # noqa: ANN001
+    class FakeProvider:
+        def download_ohlcv(self, request):  # noqa: ANN001
+            return type(
+                "Response",
+                (),
+                {"successful_symbols": (request.symbols[0],), "failed_symbols": {}},
+            )()
+
+    monkeypatch.setattr(
+        cli,
+        "list_available_providers",
+        lambda settings: [
+            {
+                "name": "polygon",
+                "enabled": True,
+                "configured": True,
+                "requires_api_key": True,
+                "market_types": ["equity"],
+                "status": "available",
+            }
+        ],
+    )
+    monkeypatch.setattr(cli, "create_market_data_provider", lambda name, settings: FakeProvider())
+
+    exit_code = cli.main(["validate-providers", "--network-smoke"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["smoke_results"][0]["status"] == "success"

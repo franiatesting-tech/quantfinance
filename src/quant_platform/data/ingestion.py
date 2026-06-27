@@ -9,9 +9,11 @@ from typing import Any
 
 import pandas as pd
 
+from quant_platform.config.settings import PlatformSettings, load_settings_from_env
 from quant_platform.config.simple_yaml import load_simple_yaml
 from quant_platform.data.providers.base import MarketDataProvider, OHLCVRequest, OHLCVResponse
 from quant_platform.data.providers.binance_public_provider import BinancePublicSpotProvider
+from quant_platform.data.providers.factory import create_market_data_provider
 from quant_platform.data.providers.yfinance_provider import YFinanceDailyProvider
 from quant_platform.data.registry import RegisteredDataset, register_dataset
 from quant_platform.data.schemas import DatasetMetadata, Frequency, MarketType
@@ -104,23 +106,42 @@ def download_combined_daily_universe(
     end: str,
     equity_provider: MarketDataProvider | None = None,
     crypto_provider: MarketDataProvider | None = None,
+    equity_provider_name: str | None = None,
+    crypto_provider_name: str | None = None,
+    fallback_provider_name: str | None = None,
+    allow_fallback: bool = True,
+    settings: PlatformSettings | None = None,
+    nasdaq_dataset_code: str | None = None,
     limit_equity: int | None = None,
     limit_crypto: int | None = None,
 ) -> OHLCVResponse:
     """Download equity and crypto universes, recording partial failures."""
 
-    equity = download_equity_universe_daily(
-        universe_config,
+    active_settings = settings or load_settings_from_env()
+    equity = _download_market_with_optional_fallback(
+        market_type=MarketType.EQUITY,
+        universe_config=universe_config,
         start=start,
         end=end,
         provider=equity_provider,
+        provider_name=equity_provider_name,
+        fallback_provider_name=fallback_provider_name,
+        allow_fallback=allow_fallback,
+        settings=active_settings,
+        nasdaq_dataset_code=nasdaq_dataset_code,
         limit_symbols=limit_equity,
     )
-    crypto = download_crypto_universe_daily(
-        universe_config,
+    crypto = _download_market_with_optional_fallback(
+        market_type=MarketType.CRYPTO,
+        universe_config=universe_config,
         start=start,
         end=end,
         provider=crypto_provider,
+        provider_name=crypto_provider_name,
+        fallback_provider_name=fallback_provider_name,
+        allow_fallback=allow_fallback,
+        settings=active_settings,
+        nasdaq_dataset_code=nasdaq_dataset_code,
         limit_symbols=limit_crypto,
     )
     frames = [response.data for response in (equity, crypto) if not response.data.empty]
@@ -139,6 +160,116 @@ def download_combined_daily_universe(
             "end": end,
             "frequency": Frequency.DAILY.value,
         },
+    )
+
+
+def _download_market_with_optional_fallback(
+    market_type: MarketType,
+    universe_config: dict[str, Any],
+    start: str,
+    end: str,
+    provider: MarketDataProvider | None,
+    provider_name: str | None,
+    fallback_provider_name: str | None,
+    allow_fallback: bool,
+    settings: PlatformSettings,
+    nasdaq_dataset_code: str | None,
+    limit_symbols: int | None,
+) -> OHLCVResponse:
+    primary_name = provider_name or _default_provider_name(market_type)
+    try:
+        active_provider = provider or create_market_data_provider(
+            primary_name,
+            settings,
+            dataset_code=nasdaq_dataset_code,
+        )
+        response = _download_market(
+            market_type,
+            universe_config,
+            start,
+            end,
+            active_provider,
+            limit_symbols,
+        )
+        if response.data.empty and response.failed_symbols:
+            raise IngestionError(f"provider {primary_name} returned no usable rows")
+        return _with_provider_metadata(response, primary_name, None)
+    except Exception as exc:  # noqa: BLE001 - controlled fallback boundary.
+        if not allow_fallback or not fallback_provider_name:
+            raise IngestionError(f"Provider {primary_name} failed: {exc}") from exc
+        if not _fallback_supports_market(fallback_provider_name, market_type):
+            raise IngestionError(
+                f"Provider {primary_name} failed and fallback {fallback_provider_name} "
+                f"does not support {market_type.value}."
+            ) from exc
+        fallback = create_market_data_provider(fallback_provider_name, settings)
+        fallback_response = _download_market(
+            market_type,
+            universe_config,
+            start,
+            end,
+            fallback,
+            limit_symbols,
+        )
+        return _with_provider_metadata(fallback_response, fallback_provider_name, str(exc))
+
+
+def _download_market(
+    market_type: MarketType,
+    universe_config: dict[str, Any],
+    start: str,
+    end: str,
+    provider: MarketDataProvider,
+    limit_symbols: int | None,
+) -> OHLCVResponse:
+    if market_type == MarketType.EQUITY:
+        return download_equity_universe_daily(
+            universe_config,
+            start=start,
+            end=end,
+            provider=provider,
+            limit_symbols=limit_symbols,
+        )
+    return download_crypto_universe_daily(
+        universe_config,
+        start=start,
+        end=end,
+        provider=provider,
+        limit_symbols=limit_symbols,
+    )
+
+
+def _default_provider_name(market_type: MarketType) -> str:
+    if market_type == MarketType.EQUITY:
+        return "yfinance"
+    return "binance_public"
+
+
+def _fallback_supports_market(provider_name: str, market_type: MarketType) -> bool:
+    name = provider_name.strip().lower()
+    if market_type == MarketType.EQUITY:
+        return name in {"yfinance", "alpha_vantage", "polygon", "nasdaq_data_link"}
+    return name in {"binance_public", "cryptocompare"}
+
+
+def _with_provider_metadata(
+    response: OHLCVResponse,
+    provider_name: str,
+    fallback_reason: str | None,
+) -> OHLCVResponse:
+    provider_used_by_symbol = {symbol: provider_name for symbol in response.successful_symbols}
+    metadata = {
+        **response.metadata,
+        "selected_provider": provider_name,
+        "provider_used_by_symbol": provider_used_by_symbol,
+    }
+    if fallback_reason:
+        metadata["fallback_reason"] = fallback_reason
+    return OHLCVResponse(
+        data=response.data,
+        successful_symbols=response.successful_symbols,
+        failed_symbols=response.failed_symbols,
+        metadata=metadata,
     )
 
 

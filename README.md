@@ -10,6 +10,7 @@ Auditable Quant Finance research platform for equity and crypto experiments. The
 - Real data ingestion is read-only and intended for research simulations with fictitious capital.
 - Equity/ETF data uses `yfinance` as a public research provider.
 - Crypto spot OHLCV uses Binance public `/api/v3/klines` through `requests`.
+- Optional keyed read-only providers are available for Alpha Vantage, Polygon, Nasdaq Data Link, and CryptoCompare.
 - CoinGecko is a metadata placeholder, not the primary OHLCV source.
 - Tests for providers, ingestion, CLI, and the real-data backtest pipeline use mocks and do not require network access.
 - Data quality reports summarize coverage, gaps, failed symbols, assumptions, and suitability for demo backtests.
@@ -38,6 +39,8 @@ py -3 -m quant_platform.cli show-settings
 py -3 -m quant_platform.cli download-real-data --config configs/universe_etfs_crypto_daily.yaml --start 2020-01-01 --end 2024-12-31 --limit-equity 5 --limit-crypto 3 --dry-run
 py -3 -m quant_platform.cli run-backtest-demo --dataset-id real_daily_demo --version v1 --profile conservative
 py -3 -m quant_platform.cli compare-profiles --dataset-id real_daily_demo --version v1 --config configs/universe_etfs_crypto_daily.yaml --risk-config configs/risk_profiles.yaml --dry-run
+py -3 -m quant_platform.cli list-providers
+py -3 -m quant_platform.cli validate-providers
 ```
 
 The CLI loads safe settings and refuses live-trading scope.
@@ -72,6 +75,8 @@ Current safety defaults:
 
 Do not commit `.env`, `.env.*`, raw data, processed data, generated reports, caches, or PDFs without explicit license approval.
 
+Keyed read-only providers load local secrets from `.env` through `python-dotenv`. CLI output reports only `configured: true/false`; it never prints API key values.
+
 Generated real-data artifacts are local only:
 
 - `data/registry/`: CSV datasets, manifests, and data quality reports.
@@ -92,6 +97,7 @@ Generated real-data artifacts are local only:
 - Coverage/data quality report: generated beside the local registry manifest as `data_quality_report.json`; it answers whether data coverage is adequate and what assumptions/warnings apply.
 - Backtest report: generated under `reports/generated/`; it reports strategy and benchmark metrics after costs.
 - Profile comparison report: generated under `reports/generated/`; it compares conservative and aggressive profiles on the same dataset and benchmark set.
+- Provider comparison report: compares coverage/quality metadata across provider reports, not tick-by-tick price equality.
 
 Free public providers can revise data, fail per ticker, impose rate limits, and have licensing constraints. yfinance adjusted-price handling and corporate actions require review before professional use. Current universes can have survivorship bias.
 
@@ -113,6 +119,7 @@ Free public providers can revise data, fail per ticker, impose rate limits, and 
 - Git setup: `docs/development/git_setup.md`.
 - Iteration 005 notes: `docs/development/iteration_005_real_data_readonly_research.md`.
 - Iteration 006 notes: `docs/development/iteration_006_real_data_validation.md`.
+- Iteration 007 notes: `docs/development/iteration_007_keyed_readonly_providers.md`.
 - Provider architecture: `docs/architecture/real_data_pipeline.md`.
 - Universe policy: `docs/architecture/universe_selection.md`.
 - Local PDF bibliography metadata: `docs/literature/bibliography_map.md`.

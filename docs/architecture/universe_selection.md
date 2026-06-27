@@ -39,3 +39,7 @@ Iteration 005 starts with a daily research universe combining liquid ETFs and cr
 ## Iteration 006 Smoke Coverage
 
 The first controlled real-data smoke downloaded 8 symbols successfully: `SPY`, `QQQ`, `IWM`, `VTI`, `EFA`, `BTCUSDT`, `ETHUSDT`, and `SOLUSDT`. No symbol failed in that smoke, but equity calendar gaps were flagged for review.
+
+## Provider Selection
+
+Iteration 007 allows selecting keyed read-only providers for the same research universe. Provider comparison should be used before mixing vendor outputs because adjusted prices, timestamp conventions, symbol support, and plan limits can differ materially across vendors.

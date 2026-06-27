@@ -1,15 +1,17 @@
 """Environment-backed platform settings with safety defaults.
 
-This module intentionally uses only the Python standard library. It does not load
-`.env` files directly; `.env.example` is a contract, and callers may populate
-`os.environ` by their preferred deployment mechanism in future iterations.
+The module may load a local `.env` file through `python-dotenv`, but API key values
+are never printed, logged, or exposed through the public settings snapshot.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 class SettingsError(ValueError):
@@ -66,17 +68,79 @@ class SafetySettings:
 
 @dataclass(frozen=True)
 class DataProviderSettings:
-    """Read-only provider toggles and optional key placeholders."""
+    """Read-only provider toggles."""
 
-    yfinance_enabled: bool = False
+    yfinance_enabled: bool = True
     stooq_enabled: bool = False
-    coingecko_enabled: bool = False
-    binance_public_enabled: bool = False
+    coingecko_enabled: bool = True
+    binance_public_enabled: bool = True
     ccxt_enabled: bool = False
-    alpha_vantage_api_key: str = ""
-    polygon_api_key: str = ""
-    nasdaq_data_link_api_key: str = ""
-    cryptocompare_api_key: str = ""
+    alpha_vantage_enabled: bool = False
+    polygon_enabled: bool = False
+    nasdaq_data_link_enabled: bool = False
+    cryptocompare_enabled: bool = False
+
+
+@dataclass(frozen=True)
+class ProviderCredentialSettings:
+    """API key values and boolean configured flags.
+
+    Key fields use `repr=False` so accidental dataclass repr output cannot leak
+    secrets. Use `public_settings_dict` for CLI output.
+    """
+
+    alpha_vantage_api_key: str = field(default="", repr=False)
+    polygon_api_key: str = field(default="", repr=False)
+    nasdaq_data_link_api_key: str = field(default="", repr=False)
+    cryptocompare_api_key: str = field(default="", repr=False)
+    alpha_vantage_configured: bool = False
+    polygon_configured: bool = False
+    nasdaq_data_link_configured: bool = False
+    cryptocompare_configured: bool = False
+
+    def __post_init__(self) -> None:
+        clean_values = {
+            "alpha_vantage_api_key": self.alpha_vantage_api_key.strip(),
+            "polygon_api_key": self.polygon_api_key.strip(),
+            "nasdaq_data_link_api_key": self.nasdaq_data_link_api_key.strip(),
+            "cryptocompare_api_key": self.cryptocompare_api_key.strip(),
+        }
+        for name, value in clean_values.items():
+            object.__setattr__(self, name, value)
+        object.__setattr__(
+            self,
+            "alpha_vantage_configured",
+            bool(clean_values["alpha_vantage_api_key"]),
+        )
+        object.__setattr__(self, "polygon_configured", bool(clean_values["polygon_api_key"]))
+        object.__setattr__(
+            self,
+            "nasdaq_data_link_configured",
+            bool(clean_values["nasdaq_data_link_api_key"]),
+        )
+        object.__setattr__(
+            self,
+            "cryptocompare_configured",
+            bool(clean_values["cryptocompare_api_key"]),
+        )
+
+
+@dataclass(frozen=True)
+class ProviderRuntimeSettings:
+    """Runtime controls for read-only provider HTTP calls and cache policy."""
+
+    provider_http_timeout_seconds: float = 30.0
+    provider_max_retries: int = 3
+    provider_retry_backoff_seconds: float = 2.0
+    provider_cache_enabled: bool = True
+
+    def __post_init__(self) -> None:
+        if self.provider_http_timeout_seconds <= 0:
+            raise SettingsError("PROVIDER_HTTP_TIMEOUT_SECONDS must be > 0.")
+        if self.provider_max_retries < 0:
+            raise SettingsError("PROVIDER_MAX_RETRIES must be >= 0.")
+        if self.provider_retry_backoff_seconds < 0:
+            raise SettingsError("PROVIDER_RETRY_BACKOFF_SECONDS must be >= 0.")
 
 
 @dataclass(frozen=True)
@@ -120,6 +184,8 @@ class PlatformSettings:
     environment: PlatformEnvironment
     safety: SafetySettings
     data_providers: DataProviderSettings
+    provider_credentials: ProviderCredentialSettings
+    provider_runtime: ProviderRuntimeSettings
     research: ResearchSettings
 
 
@@ -149,9 +215,25 @@ def _env_float(environ: Mapping[str, str], name: str, default: float) -> float:
         raise SettingsError(f"{name} must be numeric.") from exc
 
 
-def load_settings_from_env(environ: Mapping[str, str] | None = None) -> PlatformSettings:
+def _env_int(environ: Mapping[str, str], name: str, default: int) -> int:
+    raw_value = environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError as exc:
+        raise SettingsError(f"{name} must be an integer.") from exc
+
+
+def load_settings_from_env(
+    environ: Mapping[str, str] | None = None,
+    dotenv_path: str | Path = ".env",
+    load_dotenv_file: bool = True,
+) -> PlatformSettings:
     """Load platform settings from environment variables with safe defaults."""
 
+    if environ is None and load_dotenv_file:
+        load_dotenv(dotenv_path=dotenv_path, override=False)
     source = os.environ if environ is None else environ
     environment = PlatformEnvironment(
         name=_env_value(source, "QUANT_PLATFORM_ENV", "local"),
@@ -179,10 +261,22 @@ def load_settings_from_env(environ: Mapping[str, str] | None = None) -> Platform
         coingecko_enabled=_env_bool(source, "COINGECKO_ENABLED", True),
         binance_public_enabled=_env_bool(source, "BINANCE_PUBLIC_ENABLED", True),
         ccxt_enabled=_env_bool(source, "CCXT_ENABLED", False),
+        alpha_vantage_enabled=_env_bool(source, "ALPHA_VANTAGE_ENABLED", False),
+        polygon_enabled=_env_bool(source, "POLYGON_ENABLED", False),
+        nasdaq_data_link_enabled=_env_bool(source, "NASDAQ_DATA_LINK_ENABLED", False),
+        cryptocompare_enabled=_env_bool(source, "CRYPTOCOMPARE_ENABLED", False),
+    )
+    provider_credentials = ProviderCredentialSettings(
         alpha_vantage_api_key=_env_value(source, "ALPHA_VANTAGE_API_KEY", ""),
         polygon_api_key=_env_value(source, "POLYGON_API_KEY", ""),
         nasdaq_data_link_api_key=_env_value(source, "NASDAQ_DATA_LINK_API_KEY", ""),
         cryptocompare_api_key=_env_value(source, "CRYPTOCOMPARE_API_KEY", ""),
+    )
+    provider_runtime = ProviderRuntimeSettings(
+        provider_http_timeout_seconds=_env_float(source, "PROVIDER_HTTP_TIMEOUT_SECONDS", 30.0),
+        provider_max_retries=_env_int(source, "PROVIDER_MAX_RETRIES", 3),
+        provider_retry_backoff_seconds=_env_float(source, "PROVIDER_RETRY_BACKOFF_SECONDS", 2.0),
+        provider_cache_enabled=_env_bool(source, "PROVIDER_CACHE_ENABLED", True),
     )
     research = ResearchSettings(
         default_frequency=_env_value(source, "DEFAULT_FREQUENCY", "1d"),
@@ -203,5 +297,20 @@ def load_settings_from_env(environ: Mapping[str, str] | None = None) -> Platform
         environment=environment,
         safety=safety,
         data_providers=data_providers,
+        provider_credentials=provider_credentials,
+        provider_runtime=provider_runtime,
         research=research,
     )
+
+
+def public_settings_dict(settings: PlatformSettings) -> dict[str, object]:
+    """Return a JSON-safe settings snapshot with no secret values."""
+
+    payload = asdict(settings)
+    payload["provider_credentials"] = {
+        "alpha_vantage_configured": settings.provider_credentials.alpha_vantage_configured,
+        "polygon_configured": settings.provider_credentials.polygon_configured,
+        "nasdaq_data_link_configured": settings.provider_credentials.nasdaq_data_link_configured,
+        "cryptocompare_configured": settings.provider_credentials.cryptocompare_configured,
+    }
+    return payload
