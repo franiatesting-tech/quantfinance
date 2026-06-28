@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,14 +35,31 @@ def export_html_report_to_pdf(html_path: str | Path, pdf_path: str | Path) -> di
 
 
 def _try_weasyprint(source: Path, target: Path) -> dict[str, Any]:
+    # Suppress WeasyPrint logging and stdout/stderr to avoid polluting CLI output
+    weasyprint_logger = logging.getLogger("weasyprint")
+    previous_level = weasyprint_logger.level
+    weasyprint_logger.setLevel(logging.CRITICAL)
+    import io
+    import sys
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    sys.stdout = io.StringIO()
+    sys.stderr = io.StringIO()
     try:
         from weasyprint import HTML  # type: ignore[import-not-found]
     except Exception as exc:  # noqa: BLE001 - optional renderer discovery.
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        weasyprint_logger.setLevel(previous_level)
         return {"success": False, "renderer": "weasyprint", "error": str(exc)}
     try:
         HTML(filename=str(source)).write_pdf(str(target))
     except Exception as exc:  # noqa: BLE001 - renderer failure should not kill report generation.
         return {"success": False, "renderer": "weasyprint", "error": str(exc)}
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+        weasyprint_logger.setLevel(previous_level)
     return {
         "success": True,
         "status": "PDF_EXPORTED",

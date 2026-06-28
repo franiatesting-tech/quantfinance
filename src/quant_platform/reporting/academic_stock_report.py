@@ -61,6 +61,11 @@ FORMULAS = [
     ("GBM", "S_t = S_0 exp((mu - 0.5 sigma^2)t + sigma W_t)"),
     ("Black-Scholes call", "C = S exp(-qT) N(d1) - K exp(-rT) N(d2)"),
     ("Put-call parity", "C - P = S exp(-qT) - K exp(-rT)"),
+    ("Ridge Regression", "beta_hat = argmin{||Y - X*beta||^2 + lambda*||beta||^2}"),
+    ("Lasso Regression", "beta_hat = argmin{||Y - X*beta||^2 + lambda*||beta||_1}"),
+    ("ElasticNet", "beta_hat = argmin{||Y - X*beta||^2 + l1*||beta||_1 + l2*||beta||^2}"),
+    ("GARCH(1,1)", "sigma^2_t = omega + alpha*eps^2_{t-1} + beta*sigma^2_{t-1}"),
+    ("OOS R-squared", "R^2_OOS = 1 - sum(R_t - hat{R}_t)^2 / sum(R_t - mean(R))^2"),
 ]
 
 
@@ -442,12 +447,35 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "Cambiar modelo, seed, horizonte o ventana puede cambiar las conclusiones simuladas.",
         ),
         "ML Forecasting Assessment": (
-            "Esta seccion evalua si un modelo predictivo supera baselines simples en validacion walk-forward.",
-            "Los targets permitidos son retorno proximo, retorno forward a 5 dias y direccion proxima. "
-            "La validacion no mezcla futuro con pasado: cada test ocurre despues de su periodo de entrenamiento.",
-            [],
-            ["ml_prediction_vs_actual", "ml_residuals"],
-            "Un modelo que no supera el baseline naive debe marcarse como diagnostico debil, no como prediccion fiable.",
+            "GRAFICA R (Prediction vs Actual): retorno real vs prediccion ML. "
+            "GRAFICA S (Residuals): residuos del modelo (real - prediccion). "
+            "GRAFICA T (Model Comparison): RMSE, IC y DA por modelo. "
+            "GRAFICA U (Feature Importance): importancia de variables. "
+            "Metodos: Ridge (L2), Lasso (L1), ElasticNet (L1+L2), Gradient Boosting, Random Forest. "
+            "Validacion: walk-forward expanding window con purge gap = horizon_days. "
+            "Referencia: Gu, Kelly & Xiu (2020), Rev. Financial Studies, 33(5), 2223-2273. "
+            "Interpretacion: si el modelo no supera al baseline naive en RMSE y directional accuracy, "
+            "la evidencia predictiva es debil. IC > 0.03 se considera significativo.",
+            "Ridge: argmin{||Y-Xbeta||^2 + lambda*||beta||^2}. "
+            "Lasso: argmin{||Y-Xbeta||^2 + lambda*||beta||_1}. "
+            "ElasticNet: argmin{||Y-Xbeta||^2 + lambda1*||beta||_1 + lambda2*||beta||^2}. "
+            "GBM: L(phi) = sum l(y_i, hat{y}_i) + sum Omega(f_k), Omega(f) = gamma*T + 0.5*lambda*||w||^2. "
+            "Walk-forward: train=[t_0, t_0+W], test=[t_0+W+purge, t_0+W+purge+test_size]. "
+            "OOS R^2 = 1 - sum(R-hat{R})^2 / sum(R-mean(R))^2. "
+            "IC = corr(R, hat{R}). DA = prop(sign(hat{R}) = sign(R)). "
+            "GARCH(1,1): sigma^2_t = omega + alpha*eps^2_{t-1} + beta*sigma^2_{t-1}. "
+            "Bollerslev (1986), J. Econometrics, 31(3), 307-327.",
+            [
+                ("Ridge", "argmin{||Y-Xbeta||^2 + lambda*||beta||^2}"),
+                ("Lasso", "argmin{||Y-Xbeta||^2 + lambda*||beta||_1}"),
+                ("ElasticNet", "argmin{||Y-Xbeta||^2 + l1*||beta||_1 + l2*||beta||^2}"),
+                ("GBM", "L(phi) = sum l(y_i, hat{y}_i) + sum Omega(f_k)"),
+                ("GARCH(1,1)", "sigma^2_t = omega + alpha*eps^2_{t-1} + beta*sigma^2_{t-1}"),
+                ("OOS R^2", "1 - sum(R-hat{R})^2 / sum(R-mean(R))^2"),
+            ],
+            ["ml_prediction_vs_actual", "ml_residuals", "ml_model_comparison", "ml_feature_importance"],
+            "Un modelo que no supera al baseline naive debe marcarse como diagnostico debil, no como prediccion fiable. "
+            "El status STATUS_OUTPERFORMS requiere RMSE menor Y directional accuracy >= 2% superior al naive.",
         ),
         "Backtesting Analysis": (
             "GRAFICA O (Backtest Equity Curves): capital ficticio de cada estrategia. "
@@ -528,8 +556,11 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "La red o providers publicos pueden devolver datos distintos en otro momento.",
         ),
         "Mathematical Appendix": (
-            "Aqui se agrupan las formulas para consulta.",
-            "Variables, unidades, annualization, perdidas positivas y convenciones temporales quedan explicitas.",
+            "Aqui se agrupan todas las formulas del informe, incluyendo modelos ML y GARCH. "
+            "Cada formula incluye definicion de variables, unidades y convenciones.",
+            "Variables, unidades, annualization, perdidas positivas y convenciones temporales quedan explicitas. "
+            "Modelos ML: Ridge, Lasso, ElasticNet, GARCH(1,1), OOS R^2. "
+            "Referencias: Gu et al. (2020), Bollerslev (1986), Engle (1982).",
             FORMULAS,
             [],
             "La validacion page-level de varias fuentes sigue pendiente cuando asi esta documentado.",
