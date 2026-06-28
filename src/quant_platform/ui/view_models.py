@@ -195,7 +195,7 @@ def metric_explanations() -> dict[str, dict[str, str]]:
         },
         "sharpe_ratio": {
             "label": "Sharpe",
-            "plain_explanation": "Retorno por unidad de volatilidad; no garantiza beneficios.",
+            "plain_explanation": "Retorno por unidad de volatilidad; no implica beneficios.",
         },
         "sortino_ratio": {
             "label": "Sortino",

@@ -18,6 +18,7 @@ def simulate_bootstrap_returns(
 ) -> np.ndarray:
     """Simulate simple-return paths by historical bootstrap."""
 
+    _validate_shape(horizon_days, n_paths)
     clean = _as_return_series(returns)
     rng = np.random.default_rng(seed)
     return rng.choice(clean.to_numpy(dtype=float), size=(n_paths, horizon_days), replace=True)
@@ -32,6 +33,7 @@ def simulate_block_bootstrap_returns(
 ) -> np.ndarray:
     """Simulate simple-return paths by block bootstrap."""
 
+    _validate_shape(horizon_days, n_paths)
     clean = _as_return_series(returns)
     if block_size < 1:
         raise MonteCarloError("block_size must be >= 1.")
@@ -58,6 +60,7 @@ def simulate_normal_returns(
 ) -> np.ndarray:
     """Simulate normally distributed simple-return paths from historical moments."""
 
+    _validate_shape(horizon_days, n_paths)
     clean = _as_return_series(returns)
     rng = np.random.default_rng(seed)
     return rng.normal(float(clean.mean()), float(clean.std(ddof=1)), size=(n_paths, horizon_days))
@@ -74,11 +77,12 @@ def simulate_gbm_prices(
 
     if not np.isfinite(start_price) or start_price <= 0:
         raise MonteCarloError("start_price must be finite and > 0.")
-    clean = _as_return_series(log_returns)
+    _validate_shape(horizon_days, n_paths)
+    clean = _as_log_return_series(log_returns)
     rng = np.random.default_rng(seed)
     mu = float(clean.mean())
     sigma = float(clean.std(ddof=1))
-    shocks = rng.normal(mu - 0.5 * sigma**2, sigma, size=(n_paths, horizon_days))
+    shocks = rng.normal(mu, sigma, size=(n_paths, horizon_days))
     return start_price * np.exp(np.cumsum(shocks, axis=1))
 
 
@@ -91,6 +95,7 @@ def simulate_portfolio_normal_returns(
 ) -> np.ndarray:
     """Simulate correlated normal asset returns and collapse to portfolio returns."""
 
+    _validate_shape(horizon_days, n_paths)
     clean = _as_return_frame(returns)
     clean_weights = _weights(weights, clean.columns)
     mean = clean.mean().to_numpy(dtype=float)
@@ -136,6 +141,22 @@ def _as_return_series(returns: pd.Series) -> pd.Series:
     if clean.empty or not np.isfinite(clean.to_numpy(dtype=float)).all() or (clean < -1).any():
         raise MonteCarloError("returns must be finite and above -100%.")
     return clean
+
+
+def _as_log_return_series(returns: pd.Series) -> pd.Series:
+    if not isinstance(returns, pd.Series) or returns.empty:
+        raise MonteCarloError("log_returns must be a non-empty Series.")
+    clean = returns.astype(float).dropna()
+    if clean.empty or not np.isfinite(clean.to_numpy(dtype=float)).all():
+        raise MonteCarloError("log_returns must be finite.")
+    return clean
+
+
+def _validate_shape(horizon_days: int, n_paths: int) -> None:
+    if horizon_days < 1 or n_paths < 1:
+        raise MonteCarloError("horizon_days and n_paths must be >= 1.")
+    if horizon_days > 5_040 or n_paths > 100_000:
+        raise MonteCarloError("horizon_days or n_paths exceed safe research limits.")
 
 
 def _as_return_frame(returns: pd.DataFrame) -> pd.DataFrame:

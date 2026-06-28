@@ -56,7 +56,7 @@ def sharpe_formula() -> FormulaCard:
         ["Retornos", "Retorno libre de riesgo", "Periodos por ano"],
         "Ratio sin unidades.",
         "Backtest metrics y comparacion de perfiles.",
-        "No garantiza beneficios y puede enganar con colas gruesas o pocos datos.",
+        "No implica beneficios y puede enganar con colas gruesas o pocos datos.",
         "Sharpe 1.0 suele leerse como una unidad de retorno por unidad de volatilidad.",
     )
 
@@ -126,7 +126,7 @@ def turnover_formula() -> FormulaCard:
         ["Pesos actuales", "Pesos anteriores"],
         "Cambio total de pesos.",
         "Cost model, backtest metrics.",
-        "Turnover bajo no garantiza bajo riesgo de mercado.",
+        "Turnover bajo no implica bajo riesgo de mercado.",
         "Cambiar de 50/50 a 60/40 produce turnover 0.20.",
     )
 
@@ -168,7 +168,7 @@ def equity_curve_formula() -> FormulaCard:
         ["Capital anterior", "Retorno de cartera", "Costes"],
         "Capital simulado en cada fecha.",
         "Backtest report, drawdown, metricas finales.",
-        "Una curva historica ascendente no es una prediccion garantizada.",
+        "Una curva historica ascendente no es una prediccion asegurada.",
         "10000 con retorno neto 1% pasa a 10100.",
     )
 

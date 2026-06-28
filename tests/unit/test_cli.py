@@ -253,6 +253,10 @@ def test_cli_generate_stock_academic_report_from_local_json(capsys, tmp_path) ->
             str(tmp_path / "academic"),
             "--format",
             "md",
+            "--format",
+            "html",
+            "--format",
+            "pdf",
             "--overwrite",
         ]
     )
@@ -261,7 +265,10 @@ def test_cli_generate_stock_academic_report_from_local_json(capsys, tmp_path) ->
     assert exit_code == 0
     assert payload["asset_id"] == "AAPL"
     assert payload["research_only"] is True
+    assert "pdf" in payload["formats"]
+    assert payload["pdf_export"] is not None
     assert (tmp_path / "academic" / "AAPL" / "AAPL_academic_report.md").exists()
+    assert (tmp_path / "academic" / "AAPL" / "AAPL_academic_report.html").exists()
 
 
 def test_cli_generate_all_stock_academic_reports_from_local_json(capsys, tmp_path) -> None:  # noqa: ANN001

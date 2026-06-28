@@ -35,3 +35,9 @@ Iteration 008 adds optional UI dependencies under the `ui` extra only. Core test
 Any future dependency must have a specific module, security review, tests, and documentation update before being added to `pyproject.toml`.
 
 Iteration 008 deliberately does not add a diagramming dependency; the conceptual flow uses Streamlit Graphviz support and plain tables.
+
+## Iteration 010 ML/PDF Decision
+
+`scikit-learn` was not installed and was not added. The ML module therefore runs walk-forward baselines by default and marks optional sklearn models as unavailable. This avoids adding a dependency before a stronger model-selection protocol is needed.
+
+PDF export uses optional local renderers only: WeasyPrint if installed, then Pandoc if present on PATH. No PDF renderer dependency is added to the core stack.

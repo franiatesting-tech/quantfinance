@@ -28,6 +28,10 @@ from quant_platform.reporting.academic_stock_report import (
     write_all_stock_academic_reports,
     write_stock_academic_report,
 )
+from quant_platform.reporting.latex_report import (
+    write_all_stock_latex_reports,
+    write_stock_latex_report,
+)
 from quant_platform.research.report import build_and_write_quant_terminal_report
 from quant_platform.ui.actions import build_ui_status, launch_ui_command
 
@@ -111,7 +115,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="reports/generated/quant_terminal/3stocks_10y_report.json",
     )
     stock_report.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
-    stock_report.add_argument("--format", action="append", dest="formats", choices=("md", "html"))
+    stock_report.add_argument(
+        "--format",
+        action="append",
+        dest="formats",
+        choices=("md", "html", "pdf"),
+    )
     stock_report.add_argument("--include-figures", action="store_true")
     stock_report.add_argument("--overwrite", action="store_true")
 
@@ -127,10 +136,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--format",
         action="append",
         dest="formats",
-        choices=("md", "html"),
+        choices=("md", "html", "pdf"),
     )
     all_stock_reports.add_argument("--include-figures", action="store_true")
     all_stock_reports.add_argument("--overwrite", action="store_true")
+
+    latex_report = subparsers.add_parser("generate-stock-latex-report")
+    latex_report.add_argument("--asset", required=True)
+    latex_report.add_argument(
+        "--terminal-report",
+        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+    )
+    latex_report.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
+    latex_report.add_argument("--no-compile", action="store_true")
+    latex_report.add_argument("--no-figures", action="store_true")
+    latex_report.add_argument("--overwrite", action="store_true")
+
+    latex_all = subparsers.add_parser("generate-all-stock-latex-reports")
+    latex_all.add_argument(
+        "--terminal-report",
+        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+    )
+    latex_all.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
+    latex_all.add_argument("--no-compile", action="store_true")
+    latex_all.add_argument("--no-figures", action="store_true")
+    latex_all.add_argument("--overwrite", action="store_true")
     return parser
 
 
@@ -355,6 +385,62 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
+    if args.command == "generate-stock-latex-report":
+        try:
+            terminal_report = _load_terminal_report(args.terminal_report)
+            model = build_stock_academic_report_model(terminal_report, args.asset)
+            summary = write_stock_latex_report(
+                model,
+                output_dir=args.output_dir,
+                overwrite=args.overwrite,
+                compile_pdf=not args.no_compile,
+                include_figures=not args.no_figures,
+            )
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+        return 0
+
+    if args.command == "generate-all-stock-latex-reports":
+        try:
+            terminal_report = _load_terminal_report(args.terminal_report)
+            summaries = write_all_stock_latex_reports(
+                terminal_report,
+                output_dir=args.output_dir,
+                overwrite=args.overwrite,
+                compile_pdf=not args.no_compile,
+                include_figures=not args.no_figures,
+            )
+        except Exception as exc:
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(
+            json.dumps(
+                {
+                    "report_count": len(summaries),
+                    "reports": summaries,
+                    "research_only": True,
+                },
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        )
+        return 0
+
     parser.error("Unknown command")
     return 2
 

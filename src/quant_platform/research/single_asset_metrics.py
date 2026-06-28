@@ -42,6 +42,9 @@ def compute_single_asset_metrics(
         asset_returns = asset_returns.reindex(market_returns.index)
         asset_prices = clean_prices[str(symbol)].reindex(asset_returns.index)
         equity_curve = cumulative_returns(asset_returns, initial_value=1.0)
+        total_return = float(equity_curve.iloc[-1] - 1.0)
+        end_price = float(asset_prices.iloc[-1])
+        implied_start_price = end_price / (1.0 + total_return)
         asset_beta = beta(asset_returns, market_returns)
         asset_ann_return = annualized_return(asset_returns, periods_per_year)
         benchmark_ann_return = annualized_return(market_returns, periods_per_year)
@@ -50,9 +53,9 @@ def compute_single_asset_metrics(
             "observations": int(len(asset_returns)),
             "start_timestamp": pd.Timestamp(asset_returns.index[0]).isoformat(),
             "end_timestamp": pd.Timestamp(asset_returns.index[-1]).isoformat(),
-            "start_price": float(asset_prices.iloc[0]),
-            "end_price": float(asset_prices.iloc[-1]),
-            "total_return": float(asset_prices.iloc[-1] / asset_prices.iloc[0] - 1.0),
+            "start_price": float(implied_start_price),
+            "end_price": end_price,
+            "total_return": total_return,
             "annualized_return": float(asset_ann_return),
             "annualized_volatility": annualized_volatility(asset_returns, periods_per_year),
             "sharpe_ratio": sharpe_ratio(asset_returns, periodic_rf, periods_per_year),

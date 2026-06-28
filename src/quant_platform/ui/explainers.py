@@ -67,7 +67,7 @@ def backtest_explainer() -> Explainer:
         "Sirve para medir comportamiento pasado neto de costes basicos.",
         "Como ensayar una estrategia con una grabacion del pasado.",
         "El motor actual es vectorizado offline con execution_lag >= 1.",
-        "Un backtest no es una prediccion garantizada ni una recomendacion.",
+        "Un backtest no es una prediccion asegurada ni una recomendacion.",
     )
 
 
@@ -99,7 +99,7 @@ def risk_profile_explainer() -> Explainer:
         "Son perfiles de evaluacion con distintos umbrales y costes.",
         "Ayudan a comparar comportamiento bajo reglas de riesgo distintas.",
         "Como probar un coche en modo ahorro y modo deportivo.",
-        "15% y 30% son targets de drawdown, no restricciones garantizadas.",
+        "15% y 30% son targets de drawdown, no restricciones aseguradas.",
         "Mas agresivo no significa mayor retorno ni menor riesgo.",
     )
 
@@ -140,7 +140,7 @@ def prohibited_actions_explainer() -> Explainer:
 def backtest_not_prediction_explainer() -> Explainer:
     return _explainer(
         "Backtest no es prediccion",
-        "Un resultado historico no garantiza resultados futuros.",
+        "Un resultado historico no implica resultados futuros.",
         "Mercados cambian, datos pueden tener sesgos y costes reales pueden variar.",
         "Como aprobar un examen antiguo: ayuda, pero no asegura aprobar el proximo.",
         "Se requieren splits temporales, benchmarks, trials y stress testing para mejorar rigor.",

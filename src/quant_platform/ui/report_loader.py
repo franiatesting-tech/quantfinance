@@ -184,6 +184,7 @@ def summarize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "figure_count": len(figures) if isinstance(figures, dict) else 0,
             "markdown_path": outputs.get("md") if isinstance(outputs, dict) else None,
             "html_path": outputs.get("html") if isinstance(outputs, dict) else None,
+            "pdf_path": outputs.get("pdf") if isinstance(outputs, dict) else None,
         }
     return {"top_level_keys": sorted(str(key) for key in payload)[:8]}
 

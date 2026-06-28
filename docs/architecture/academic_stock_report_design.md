@@ -11,8 +11,9 @@ Iteration 010 adds a document-generation layer on top of the professional quant 
   -> Plotly academic figures
   -> Markdown report
   -> HTML report
+  -> optional PDF report
   -> metadata.json
-  -> UI Academic Reports inspection
+  -> UI Stock Research Terminal inspection
 ```
 
 ## Inputs
@@ -29,6 +30,7 @@ For each asset:
 reports/generated/academic_stock_reports/<asset>/
 ├── <asset>_academic_report.md
 ├── <asset>_academic_report.html
+├── <asset>_academic_report.pdf (if renderer is available)
 ├── metadata.json
 └── figures/*.html
 ```
@@ -37,7 +39,7 @@ Generated outputs are ignored by Git.
 
 ## Document Structure
 
-Each report has 23 sections:
+Each report has 24 sections:
 
 1. Portada.
 2. Executive Summary.
@@ -48,20 +50,21 @@ Each report has 23 sections:
 7. Price Dynamics.
 8. Return Construction.
 9. Performance Metrics.
-10. Risk Metrics.
-11. CAPM-Based Metrics.
-12. Value at Risk Analysis.
-13. Monte Carlo Simulation.
+10. CAPM Metrics.
+11. Value at Risk Analysis.
+12. Monte Carlo Simulation.
+13. ML Forecasting Assessment.
 14. Backtesting Analysis.
 15. Options Analytics.
 16. Comparison Against Benchmark.
-17. Statistical Interpretation.
-18. Model Performance Assessment.
-19. Stock-Specific Conclusions.
-20. Limitations.
-21. Reproducibility.
-22. Mathematical Appendix.
-23. Bibliography & Method Traceability.
+17. Quantitative Decision Signal.
+18. Statistical Interpretation.
+19. Model Performance Assessment.
+20. Stock-Specific Conclusions.
+21. Limitations.
+22. Reproducibility.
+23. Mathematical Appendix.
+24. Bibliography & Method Traceability.
 
 Each section includes a plain-language explanation, technical explanation, parameters/data used, formulas where relevant, figures where relevant, conclusions, and limitations.
 
@@ -83,4 +86,4 @@ Conclusions are deterministic rules in `academic_conclusions.py`; no LLM is used
 
 ## PDF
 
-PDF export is intentionally not implemented in Iteration 010. Markdown and HTML are primary outputs. A future PDF layer should detect Pandoc or WeasyPrint and return `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER` when unavailable.
+PDF export is implemented as a best-effort local renderer. The platform first tries WeasyPrint, then Pandoc. If neither is available, report generation still succeeds with Markdown/HTML and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.

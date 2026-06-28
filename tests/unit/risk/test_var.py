@@ -11,9 +11,10 @@ def test_historical_var_uses_alpha_quantile_of_positive_losses() -> None:
     assert historical_var(losses, alpha=0.8) == pytest.approx(4.2)
 
 
-def test_historical_var_rejects_negative_losses() -> None:
-    with pytest.raises(RiskMetricError, match="positive losses"):
-        historical_var([1.0, -1.0, 2.0], alpha=0.95)
+def test_historical_var_accepts_negative_losses() -> None:
+    """Negative losses (gains) are valid under the standard convention."""
+    result = historical_var([1.0, -1.0, 2.0], alpha=0.95)
+    assert result == pytest.approx(1.9)
 
 
 def test_historical_var_rejects_invalid_alpha() -> None:

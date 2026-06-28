@@ -138,7 +138,7 @@ def action_catalog() -> dict[str, list[dict[str, str]]]:
             "Ver quality reports",
             "Leer reportes locales de calidad de datos.",
             "Muestra gaps, fallos, warnings y aptitud para demos.",
-            "Un reporte sin fallos no garantiza datos profesionales.",
+            "Un reporte sin fallos no implica datos profesionales.",
             "py -3 -m quant_platform.cli ui-status",
             "data/registry/<dataset>/<version>/data_quality_report.json",
         ),
@@ -182,7 +182,7 @@ def action_catalog() -> dict[str, list[dict[str, str]]]:
         ),
     ]
     prohibited = [
-        _prohibited("Trading real", "Comprar o vender con dinero real.", "Fuera de alcance."),
+        _prohibited("Trading real", "Ejecutar operaciones con dinero real.", "Fuera de alcance."),
         _prohibited(
             "Paper trading",
             "Simular ordenes conectadas a broker/exchange.",

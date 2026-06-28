@@ -88,17 +88,19 @@ def binomial_crr_price(
     maturity_years: float,
     steps: int = 100,
     option_type: str = "call",
+    dividend_yield: float = 0.0,
 ) -> float:
     """Compute a Cox-Ross-Rubinstein European option price."""
 
     _option_inputs(spot, strike, volatility, maturity_years)
+    _rate_inputs(rate, dividend_yield)
     clean_type = _option_type(option_type)
     if steps < 1:
         raise OptionModelError("steps must be >= 1.")
     dt = maturity_years / steps
     up = math.exp(volatility * math.sqrt(dt))
     down = 1.0 / up
-    growth = math.exp(rate * dt)
+    growth = math.exp((rate - dividend_yield) * dt)
     probability = (growth - down) / (up - down)
     if probability < 0 or probability > 1:
         raise OptionModelError("CRR risk-neutral probability is outside [0, 1].")
@@ -120,10 +122,14 @@ def put_call_parity_gap(
     strike: float,
     rate: float,
     maturity_years: float,
+    dividend_yield: float = 0.0,
 ) -> float:
-    """Return put-call parity gap: `C - P - (S - K exp(-rT))`."""
+    """Return parity gap: `C - P - (S exp(-qT) - K exp(-rT))`."""
 
-    return float(call_price - put_price - (spot - strike * math.exp(-rate * maturity_years)))
+    _rate_inputs(rate, dividend_yield)
+    forward_parity = spot * math.exp(-dividend_yield * maturity_years)
+    forward_parity -= strike * math.exp(-rate * maturity_years)
+    return float(call_price - put_price - forward_parity)
 
 
 def payoff_profile(
@@ -148,6 +154,77 @@ def payoff_profile(
     return rows
 
 
+def protective_put_payoff(
+    spot: float,
+    strike: float,
+    put_premium: float = 0.0,
+    points: int = 41,
+) -> list[dict[str, float]]:
+    """Build protective-put payoff rows for one stock plus one put option."""
+
+    if points < 3:
+        raise OptionModelError("points must be >= 3.")
+    _option_inputs(spot, strike, 0.2, 1.0)
+    if not np.isfinite(put_premium) or put_premium < 0:
+        raise OptionModelError("put_premium must be finite and >= 0.")
+    grid = np.linspace(0.5 * spot, 1.5 * spot, points)
+    rows = []
+    for terminal_spot in grid:
+        stock_pnl = float(terminal_spot - spot)
+        put_payoff = max(float(strike - terminal_spot), 0.0)
+        rows.append(
+            {
+                "underlying_price": float(terminal_spot),
+                "stock_pnl": stock_pnl,
+                "put_payoff": put_payoff,
+                "net_payoff": stock_pnl + put_payoff - put_premium,
+            }
+        )
+    return rows
+
+
+def option_scenario_table(
+    spot: float,
+    rate: float,
+    volatility: float,
+    maturity_years: float = 1.0,
+    dividend_yield: float = 0.0,
+    steps: int = 100,
+) -> list[dict[str, float | str]]:
+    """Return option analytics for 90%, ATM, and 110% strike scenarios."""
+
+    rows: list[dict[str, float | str]] = []
+    for label, multiplier in (("90%", 0.9), ("ATM", 1.0), ("110%", 1.1)):
+        strike = spot * multiplier
+        call = black_scholes_price(
+            spot, strike, rate, volatility, maturity_years, "call", dividend_yield
+        )
+        put = black_scholes_price(
+            spot, strike, rate, volatility, maturity_years, "put", dividend_yield
+        )
+        greeks = black_scholes_greeks(
+            spot, strike, rate, volatility, maturity_years, "call", dividend_yield
+        )
+        rows.append(
+            {
+                "scenario": label,
+                "strike": float(strike),
+                "black_scholes_call": call,
+                "black_scholes_put": put,
+                "binomial_call": binomial_crr_price(
+                    spot, strike, rate, volatility, maturity_years, steps, "call", dividend_yield
+                ),
+                "binomial_put": binomial_crr_price(
+                    spot, strike, rate, volatility, maturity_years, steps, "put", dividend_yield
+                ),
+                "call_delta": float(greeks["delta"]),
+                "call_gamma": float(greeks["gamma"]),
+                "model_status": "PARAMETRIC_EDUCATIONAL_MODEL",
+            }
+        )
+    return rows
+
+
 def _d1_d2(
     spot: float,
     strike: float,
@@ -156,6 +233,7 @@ def _d1_d2(
     rate: float,
     dividend_yield: float,
 ) -> tuple[float, float]:
+    _rate_inputs(rate, dividend_yield)
     d1 = (
         math.log(spot / strike) + (rate - dividend_yield + 0.5 * volatility**2) * maturity_years
     ) / (volatility * math.sqrt(maturity_years))
@@ -175,6 +253,11 @@ def _option_inputs(
     if spot <= 0 or strike <= 0 or volatility <= 0 or maturity_years <= 0:
         raise OptionModelError("spot, strike, volatility, and maturity must be > 0.")
     return values
+
+
+def _rate_inputs(rate: float, dividend_yield: float = 0.0) -> None:
+    if not np.isfinite(rate) or not np.isfinite(dividend_yield):
+        raise OptionModelError("rate and dividend_yield must be finite.")
 
 
 def _option_type(option_type: str) -> str:

@@ -23,10 +23,10 @@ def compute_var_summary(
     """Compute historical, normal parametric, and optional MC VaR/ES."""
 
     clean_returns = _as_return_series(returns)
-    losses = (-clean_returns).clip(lower=0.0)
+    losses = -clean_returns
     summary: dict[str, object] = {
         "alpha": float(alpha),
-        "loss_sign_convention": "positive_losses_L=max(-R, 0)",
+        "loss_sign_convention": "L_t = -r_t (standard, no clip)",
         "historical": {
             "var": historical_var(losses, alpha),
             "expected_shortfall": historical_expected_shortfall(losses, alpha),
@@ -35,13 +35,39 @@ def compute_var_summary(
     }
     if simulated_returns is not None:
         clean_simulated = _as_return_series(pd.Series(simulated_returns, dtype=float))
-        simulated_losses = (-clean_simulated).clip(lower=0.0)
+        simulated_losses = -clean_simulated
         summary["monte_carlo"] = {
             "var": historical_var(simulated_losses, alpha),
             "expected_shortfall": historical_expected_shortfall(simulated_losses, alpha),
             "model_status": "PARAMETRIC_OR_BOOTSTRAP_SIMULATION",
         }
     return summary
+
+
+def compute_var_comparison_table(
+    returns: pd.Series,
+    alphas: tuple[float, ...] = (0.95, 0.99),
+    simulated_returns: pd.Series | np.ndarray | None = None,
+) -> list[dict[str, float | str]]:
+    """Return long-form VaR/ES rows for historical, normal, and MC methods."""
+
+    rows: list[dict[str, float | str]] = []
+    for alpha in alphas:
+        summary = compute_var_summary(returns, alpha=alpha, simulated_returns=simulated_returns)
+        for method in ("historical", "parametric_normal", "monte_carlo"):
+            payload = summary.get(method)
+            if not isinstance(payload, dict):
+                continue
+            rows.append(
+                {
+                    "alpha": float(alpha),
+                    "method": method,
+                    "var": float(payload["var"]),
+                    "expected_shortfall": float(payload["expected_shortfall"]),
+                    "loss_sign_convention": "L_t = -R_t",
+                }
+            )
+    return rows
 
 
 def parametric_normal_var_es(returns: pd.Series, alpha: float = 0.95) -> dict[str, float | str]:
@@ -57,8 +83,8 @@ def parametric_normal_var_es(returns: pd.Series, alpha: float = 0.95) -> dict[st
     normal = NormalDist()
     z = normal.inv_cdf(alpha)
     pdf = float(np.exp(-0.5 * z**2) / np.sqrt(2.0 * np.pi))
-    var_value = max(0.0, -mean + sigma * z)
-    es_value = max(0.0, -mean + sigma * pdf / (1.0 - alpha))
+    var_value = -mean + sigma * z
+    es_value = -mean + sigma * pdf / (1.0 - alpha)
     return {
         "var": float(var_value),
         "expected_shortfall": float(es_value),

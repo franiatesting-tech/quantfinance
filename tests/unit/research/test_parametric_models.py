@@ -24,8 +24,7 @@ def test_var_summary_uses_positive_loss_convention() -> None:
 
     summary = compute_var_summary(returns, alpha=0.8)
 
-    assert summary["loss_sign_convention"] == "positive_losses_L=max(-R, 0)"
-    assert summary["historical"]["var"] >= 0
+    assert summary["loss_sign_convention"] == "L_t = -r_t (standard, no clip)"
     assert summary["parametric_normal"]["model_status"] == "PARAMETRIC_EDUCATIONAL_MODEL"
 
 

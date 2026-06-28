@@ -38,6 +38,7 @@ def hedge_contract_count(
     exposure_value: float,
     futures_contract_value: float,
     hedge_ratio: float,
+    exposure_side: str = "long",
 ) -> dict[str, float | int | str]:
     """Estimate contracts needed for a parametric futures hedge."""
 
@@ -46,10 +47,16 @@ def hedge_contract_count(
         raise HedgingError("hedge contract inputs must be finite.")
     if exposure_value <= 0 or futures_contract_value <= 0:
         raise HedgingError("exposure and contract value must be > 0.")
-    raw_contracts = hedge_ratio * exposure_value / futures_contract_value
+    side = exposure_side.lower().strip()
+    if side not in {"long", "short"}:
+        raise HedgingError("exposure_side must be 'long' or 'short'.")
+    hedge_sign = -1.0 if side == "long" else 1.0
+    raw_contracts = hedge_sign * hedge_ratio * exposure_value / futures_contract_value
     return {
         "raw_contracts": float(raw_contracts),
         "rounded_contracts": int(math.ceil(abs(raw_contracts))) * (1 if raw_contracts >= 0 else -1),
+        "exposure_side": side,
+        "hedge_direction": "short_hedge" if raw_contracts < 0 else "long_hedge",
         "model_status": "PARAMETRIC_EDUCATIONAL_MODEL",
         "real_market_status": "DATA_REQUIRED_FOR_REAL_HEDGE",
     }

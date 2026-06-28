@@ -1,6 +1,6 @@
 # Quant Platform
 
-Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical/parametric/Monte Carlo VaR, historical Expected Shortfall, performance metrics, portfolio baselines, long-only 3-stock grid optimization, transaction costs, vectorized backtesting, temporal validation splits, benchmark suite, VaR exception backtesting, anti-overfitting registry, settings guardrails, read-only real data ingestion, data quality reports, profile comparison, a professional 3-stock quant terminal report, and a local read-only Streamlit research UI.
+Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical/parametric/Monte Carlo VaR, Expected Shortfall, performance metrics, portfolio optimization, Monte Carlo, responsible walk-forward ML diagnostics, research-only decision signals, Black-Scholes/binomial options, fixed income, rates, hedging, exposure, vectorized backtesting, academic per-stock reports, and a local read-only Streamlit Stock Research Terminal.
 
 ## Current State
 
@@ -14,7 +14,7 @@ Auditable Quant Finance research platform for equity and crypto experiments. The
 - CoinGecko is a metadata placeholder, not the primary OHLCV source.
 - Tests for providers, ingestion, CLI, and the real-data backtest pipeline use mocks and do not require network access.
 - Data quality reports summarize coverage, gaps, failed symbols, assumptions, and suitability for demo backtests.
-- No predictive ML, deep learning, DRL, CVXPY, Heston, MLflow, cloud dashboard, execution dashboard, broker dashboard, or trading dashboard is implemented.
+- Predictive ML is limited to responsible walk-forward diagnostics and baselines unless optional `scikit-learn` is installed; it never claims guaranteed prediction.
 - Black-Scholes, binomial options, fixed income, rates derivatives, hedging, and counterparty exposure blocks are parametric educational models unless real market inputs are supplied in future iterations.
 - The local UI inspects public settings, provider status, local dataset manifests, quality reports, generated reports, professional terminal reports, and allowed/prohibited actions. It does not run data downloads, backtests, network smoke tests, orders, or paper trading automatically.
 
@@ -48,8 +48,8 @@ py -3 -m quant_platform.cli download-real-data --config configs/universe_etfs_cr
 py -3 -m quant_platform.cli run-backtest-demo --dataset-id real_daily_demo --version v1 --profile conservative
 py -3 -m quant_platform.cli compare-profiles --dataset-id real_daily_demo --version v1 --config configs/universe_etfs_crypto_daily.yaml --risk-config configs/risk_profiles.yaml --dry-run
 py -3 -m quant_platform.cli build-quant-terminal-report --config configs/quant_terminal_3_stocks.yaml --offline-synthetic
-py -3 -m quant_platform.cli generate-stock-academic-report --asset AAPL --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --format md --format html --include-figures --overwrite
-py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --include-figures --overwrite
+py -3 -m quant_platform.cli generate-stock-academic-report --asset AAPL --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --format md --format html --format pdf --include-figures --overwrite
+py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --format pdf --include-figures --overwrite
 py -3 -m quant_platform.cli list-providers
 py -3 -m quant_platform.cli validate-providers
 py -3 -m quant_platform.cli ui-status
@@ -64,13 +64,9 @@ The CLI loads safe settings and refuses live-trading scope.
 py -3 -m quant_platform.cli launch-ui --host localhost --port 8501
 ```
 
-The UI is local and read-only. It displays only public settings and `configured: true/false` provider metadata. It reads ignored local artifacts from `data/registry/` and `reports/generated/` when they exist.
+The UI is local and read-only. The main screen is a single `Stock Research Terminal` page with report selector, stock selector, KPI cards, internal tabs and academic report links. Developer diagnostics are hidden in an expander.
 
-Available sections include `Inicio`, `Quant Terminal`, `Academic Reports`, `Flujo conceptual`, `Estado del sistema`, `Providers`, `Universo`, `Datasets`, `Calidad de datos`, `Backtests`, `Comparacion de perfiles`, `Formulas`, `Acciones permitidas`, and `Riesgos y limites`.
-
-The `Quant Terminal` section consumes `reports/generated/quant_terminal/3stocks_10y_report.json` and splits the analysis into stock detail, 3-stock portfolio, Monte Carlo, VaR, backtesting, options, fixed income/rates, hedging/exposure, and spreadsheet/method bibliography tabs.
-
-The `Academic Reports` section inspects generated per-stock Markdown/HTML reports, metadata, figure lists, and safe regeneration commands. It does not generate reports automatically.
+The terminal consumes `reports/generated/quant_terminal/3stocks_10y_report.json` and shows stock detail, data quality, risk, Monte Carlo, ML, backtesting, options and report outputs without running downloads or orders.
 
 The `Formulas` section explains simple return, log return, portfolio return, equity curve, volatility, Sharpe, Sortino, max drawdown, VaR, Expected Shortfall, turnover, and transaction costs with LaTeX plus plain-language interpretation.
 
@@ -114,7 +110,7 @@ Generated real-data artifacts are local only:
 - `reports/generated/`: backtest reports, profile comparison reports, and trial registries.
 - `reports/generated/quant_terminal/3stocks_10y_report.json`: professional 3-stock terminal report.
 - `reports/generated/portfolio_optimization/3stocks_frontier.csv`: CSV spreadsheet equivalent for the optimization frontier.
-- `reports/generated/academic_stock_reports/<asset>/`: per-stock academic Markdown, HTML, metadata, and Plotly figure HTML files.
+- `reports/generated/academic_stock_reports/<asset>/`: per-stock academic Markdown, HTML, optional PDF, metadata, and Plotly figure HTML files.
 
 If these folders are empty, the UI shows safe CLI commands instead of failing. Demo artifacts, if generated in future, must be clearly marked `DEMO_SYNTHETIC_NOT_REAL_DATA` and remain ignored by Git.
 
@@ -135,7 +131,7 @@ If these folders are empty, the UI shows safe CLI commands instead of failing. D
 - Profile comparison report: generated under `reports/generated/`; it compares conservative and aggressive profiles on the same dataset and benchmark set.
 - Provider comparison report: compares coverage/quality metadata across provider reports, not tick-by-tick price equality.
 - Professional quant terminal report: generated with `build-quant-terminal-report`; it analyzes AAPL/MSFT/NVDA, SPY benchmark, risk-free proxy/config rate, portfolio optimization, Monte Carlo, VaR, strategy backtests, options, fixed income, rates, hedging, exposure, and method bibliography.
-- Academic stock reports: generated with `generate-stock-academic-report` or `generate-all-stock-academic-reports`; each report contains portada, executive summary, plain-English summary, data provenance, quality review, price/return/risk/CAPM/VaR/Monte Carlo/backtesting/options sections, statistical interpretation, conclusions, limitations, reproducibility, mathematical appendix, and bibliography traceability.
+- Academic stock reports: generated with `generate-stock-academic-report` or `generate-all-stock-academic-reports`; each report contains 24 sections, formulas, figures, ML assessment, quantitative decision signal, conclusions, limitations, reproducibility, mathematical appendix, and bibliography traceability. PDF export uses WeasyPrint or Pandoc when available; otherwise HTML remains printable and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.
 - Local UI: reads these reports for inspection only and does not generate new reports automatically.
 
 Free public providers can revise data, fail per ticker, impose rate limits, and have licensing constraints. yfinance adjusted-price handling and corporate actions require review before professional use. Current universes can have survivorship bias.
@@ -151,6 +147,7 @@ Free public providers can revise data, fail per ticker, impose rate limits, and 
 - Human configs express costs in bps; internal cost calculations use decimal rates.
 - Backtests require `execution_lag >= 1` to avoid same-row look-ahead.
 - Validation splits are chronological; random splits are not allowed for time series.
+- Research-only quantitative decision signals are limited to `FAVORABLE`, `NEUTRAL`, `CAUTION`, `UNFAVORABLE`, and `INSUFFICIENT_DATA` and are not investment advice.
 
 ## Documentation
 

@@ -2,32 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 from typing import Any
 
 from quant_platform.config.settings import load_settings_from_env
 from quant_platform.ui.actions import action_catalog, build_ui_status, safe_command_catalog
-from quant_platform.ui.charts import (
-    backtest_metric_figure,
-    data_quality_warnings_figure,
-    drawdown_curve_figure,
-    equity_curve_figure,
-    profile_comparison_figure,
-    provider_status_figure,
-    quality_coverage_figure,
-    returns_histogram_figure,
-    terminal_backtest_equity_figure,
-    terminal_correlation_heatmap,
-    terminal_exposure_figure,
-    terminal_frontier_figure,
-    terminal_monte_carlo_fan_figure,
-    terminal_options_figure,
-    terminal_price_figure,
-    terminal_var_figure,
-    transaction_cost_breakdown_figure,
-    universe_mix_figure,
-    var_es_conceptual_figure,
-)
 from quant_platform.ui.explainers import all_explainers
 from quant_platform.ui.formulas import all_formulas
 from quant_platform.ui.report_loader import load_dataset_quality_report, read_json_report
@@ -38,6 +18,27 @@ from quant_platform.ui.view_models import (
     report_series,
     transaction_cost_components,
 )
+
+_charts_mod = importlib.import_module("quant_platform.ui.charts")
+backtest_metric_figure = _charts_mod.backtest_metric_figure
+data_quality_warnings_figure = _charts_mod.data_quality_warnings_figure
+drawdown_curve_figure = _charts_mod.drawdown_curve_figure
+equity_curve_figure = _charts_mod.equity_curve_figure
+profile_comparison_figure = _charts_mod.profile_comparison_figure
+provider_status_figure = _charts_mod.provider_status_figure
+quality_coverage_figure = _charts_mod.quality_coverage_figure
+returns_histogram_figure = _charts_mod.returns_histogram_figure
+terminal_backtest_equity_figure = _charts_mod.terminal_backtest_equity_figure
+terminal_correlation_heatmap = _charts_mod.terminal_correlation_heatmap
+terminal_exposure_figure = _charts_mod.terminal_exposure_figure
+terminal_frontier_figure = _charts_mod.terminal_frontier_figure
+terminal_monte_carlo_fan_figure = _charts_mod.terminal_monte_carlo_fan_figure
+terminal_options_figure = _charts_mod.terminal_options_figure
+terminal_price_figure = _charts_mod.terminal_price_figure
+terminal_var_figure = _charts_mod.terminal_var_figure
+transaction_cost_breakdown_figure = _charts_mod.transaction_cost_breakdown_figure
+universe_mix_figure = _charts_mod.universe_mix_figure
+var_es_conceptual_figure = _charts_mod.var_es_conceptual_figure
 
 SECTIONS = (
     "Inicio",
@@ -64,24 +65,35 @@ def main() -> None:
     import streamlit as st
 
     st.set_page_config(
-        page_title="Quant Platform Research Console",
-        page_icon="QP",
+        page_title="Stock Research Terminal",
+        page_icon="ST",
         layout="wide",
     )
     _inject_style(st)
 
-    st.sidebar.title("Quant Research Console")
-    st.sidebar.markdown("**Research-only / No trading**")
-    section = st.sidebar.radio("Navegacion", SECTIONS, label_visibility="collapsed")
-    st.sidebar.divider()
-    registry_dir = st.sidebar.text_input("Registry dir", value="data/registry")
-    report_dir = st.sidebar.text_input("Report dir", value="reports/generated")
-    universe_config = st.sidebar.text_input(
-        "Universe config",
-        value="configs/universe_etfs_crypto_daily.yaml",
+    st.markdown(
+        """
+        <div class="hero">
+          <div>
+            <p class="eyebrow">Research-only equity analytics</p>
+            <h1>Stock Research Terminal</h1>
+            <p class="hero-copy">
+              One-page quantitative view: data, returns, risk, CAPM, VaR/ES,
+              Monte Carlo, ML diagnostics, backtesting, options and academic report links.
+            </p>
+          </div>
+          <div class="hero-badge">No trading<br/>No advice</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    risk_profiles = st.sidebar.text_input("Risk profiles", value="configs/risk_profiles.yaml")
-    st.sidebar.caption("No automatic network calls. No orders. No secrets displayed.")
+    _render_safety_strip(st)
+
+    control_cols = st.columns([1.2, 1.2, 1])
+    report_dir = control_cols[0].text_input("Report directory", value="reports/generated")
+    registry_dir = "data/registry"
+    universe_config = "configs/universe_etfs_crypto_daily.yaml"
+    risk_profiles = "configs/risk_profiles.yaml"
 
     settings = load_settings_from_env()
     snapshot = build_platform_snapshot(
@@ -99,26 +111,13 @@ def main() -> None:
         risk_profiles_path=risk_profiles,
     )
 
-    _render_header(st)
-    _render_safety_strip(st)
-
-    routes = {
-        "Inicio": _render_home,
-        "Quant Terminal": _render_quant_terminal,
-        "Academic Reports": _render_academic_reports,
-        "Flujo conceptual": _render_conceptual_flow,
-        "Estado del sistema": _render_system_status,
-        "Providers": _render_providers,
-        "Universo": _render_universe,
-        "Datasets": _render_datasets,
-        "Calidad de datos": _render_quality,
-        "Backtests": _render_backtests,
-        "Comparacion de perfiles": _render_profile_comparison,
-        "Formulas": _render_formulas,
-        "Acciones permitidas": _render_actions,
-        "Riesgos y limites": _render_risks,
-    }
-    routes[section](st, pd, snapshot, status)
+    if control_cols[2].button("Regenerate command", use_container_width=True):
+        st.code(
+            "py -3 -m quant_platform.cli build-quant-terminal-report "
+            "--config configs/quant_terminal_3_stocks.yaml",
+            language="powershell",
+        )
+    _render_stock_research_terminal(st, pd, snapshot, status)
 
 
 def _render_header(st) -> None:  # noqa: ANN001
@@ -144,7 +143,316 @@ def _render_safety_strip(st) -> None:  # noqa: ANN001
     cols = st.columns(3)
     cols[0].success("Research-only / No trading")
     cols[1].info("No se muestran claves")
-    cols[2].warning("Backtest no es prediccion garantizada")
+    cols[2].warning("Backtest no es prediccion asegurada")
+
+
+def _render_stock_research_terminal(
+    st, pd, snapshot: dict[str, Any], status: dict[str, Any]
+) -> None:  # noqa: ANN001
+    reports = [
+        row
+        for row in snapshot["reports"]
+        if row.get("report_type") == "professional_quant_terminal"
+    ]
+    if not reports:
+        _empty_state(st, "No hay quant terminal report local.", _terminal_commands())
+        return
+
+    report_labels = [
+        f"{row['name']} | {row.get('summary', {}).get('data_mode')}" for row in reports
+    ]
+    selected_report = st.selectbox("Select report", report_labels)
+    report_row = reports[report_labels.index(selected_report)]
+    report = read_json_report(report_row["path"])
+    stocks = report.get("stocks", {})
+    if not isinstance(stocks, dict) or not stocks:
+        st.error("Selected report has no per-stock payload.")
+        return
+
+    stock_cols = st.columns([1, 1, 2])
+    asset_id = stock_cols[0].selectbox("Select stock", sorted(stocks))
+    stock = stocks[asset_id]
+    stock_cols[1].selectbox(
+        "Report view",
+        ["Overview", "Data", "Risk", "Monte Carlo", "ML", "Backtesting", "Options", "Report"],
+        index=0,
+        key="report_view_selector",
+    )
+    stock_cols[2].caption(
+        "This is not investment advice. It is a quantitative research signal based on "
+        "historical data, assumptions, and model limitations."
+    )
+
+    metrics = _mapping(stock.get("metrics"))
+    var_hist = _mapping(_mapping(stock.get("var")).get("historical"))
+    ml = _mapping(stock.get("ml_forecasting"))
+    signal = _mapping(stock.get("decision_signal"))
+    data_used = _mapping(stock.get("data_used"))
+    _kpi_row(
+        st,
+        [
+            ("Last price", _money(data_used.get("last_close"), data_used.get("currency", "USD"))),
+            ("Cumulative return", _pct(metrics.get("final_cumulative_return"))),
+            ("CAGR", _pct(metrics.get("cagr"))),
+            ("Volatility", _pct(metrics.get("annualized_volatility"))),
+            ("Sharpe", _num(metrics.get("sharpe_ratio"))),
+            ("Sortino", _num(metrics.get("sortino_ratio"))),
+            ("Treynor", _num(metrics.get("treynor_ratio"))),
+            ("Jensen alpha", _pct(metrics.get("jensen_alpha"))),
+            ("Max drawdown", _pct(metrics.get("max_drawdown"))),
+            ("VaR 95", _pct(var_hist.get("var"))),
+            ("ES 95", _pct(var_hist.get("expected_shortfall"))),
+            ("ML dir. accuracy", _pct(ml.get("directional_accuracy"))),
+            ("Decision signal", str(signal.get("signal", "INSUFFICIENT_DATA"))),
+        ],
+    )
+
+    tabs = st.tabs(
+        ["Overview", "Data", "Risk", "Monte Carlo", "ML", "Backtesting", "Options", "Report"]
+    )
+    with tabs[0]:
+        st.markdown("### What was studied?")
+        st.write(
+            "Historical OHLCV data, return construction, performance, risk, CAPM, VaR/ES, "
+            "Monte Carlo, walk-forward ML diagnostics, strategy backtests and options analytics."
+        )
+        st.markdown("### How to interpret this?")
+        st.write(
+            "Read the signal as a research summary under historical assumptions. Favorable does "
+            "not mean action; caution does not mean a forecast."
+        )
+        st.plotly_chart(
+            _stock_line_figure(stock, "price_series", "price", asset_id, "Price history"),
+            use_container_width=True,
+        )
+        st.plotly_chart(
+            _stock_line_figure(
+                stock, "cumulative_returns", "cumulative_return", asset_id, "Cumulative returns"
+            ),
+            use_container_width=True,
+        )
+    with tabs[1]:
+        st.markdown("### Data & Quality")
+        st.dataframe(_safe_df(pd, [_mapping(stock.get("data_used"))]), use_container_width=True)
+        st.dataframe(_safe_df(pd, [_mapping(stock.get("data_quality"))]), use_container_width=True)
+        st.plotly_chart(
+            _stock_line_figure(stock, "volume_series", "volume", asset_id, "Volume"),
+            use_container_width=True,
+        )
+    with tabs[2]:
+        st.markdown("### Model limits")
+        st.warning("VaR and ES are model estimates. They do not describe every possible loss.")
+        st.plotly_chart(
+            _stock_line_figure(stock, "drawdown_series", "drawdown", asset_id, "Drawdown"),
+            use_container_width=True,
+        )
+        st.plotly_chart(_stock_returns_histogram(stock), use_container_width=True)
+        st.plotly_chart(_stock_var_figure(stock), use_container_width=True)
+    with tabs[3]:
+        st.plotly_chart(_stock_mc_paths_figure(stock), use_container_width=True)
+        st.plotly_chart(_stock_mc_fan_figure(stock), use_container_width=True)
+    with tabs[4]:
+        st.markdown("### ML Forecasting Assessment")
+        st.dataframe(_safe_df(pd, [_ml_summary_row(ml)]), use_container_width=True, hide_index=True)
+        st.plotly_chart(_stock_ml_prediction_figure(stock), use_container_width=True)
+    with tabs[5]:
+        st.plotly_chart(_stock_backtest_figure(stock), use_container_width=True)
+    with tabs[6]:
+        st.plotly_chart(_stock_options_payoff_figure(stock), use_container_width=True)
+    with tabs[7]:
+        _render_stock_report_links(st, snapshot, asset_id)
+
+    with st.expander("Developer diagnostics"):
+        st.json({"ui_status": status, "selected_report": report_row, "selected_stock": asset_id})
+
+
+def _stock_line_figure(
+    stock: dict[str, Any], series_key: str, value_key: str, asset_id: str, title: str
+):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    rows = [row for row in stock.get(series_key, []) if isinstance(row, dict)]
+    figure = go.Figure()
+    if rows:
+        figure.add_trace(
+            go.Scatter(
+                x=[row.get("timestamp") for row in rows],
+                y=[row.get(value_key) for row in rows],
+                mode="lines",
+                name=asset_id,
+            )
+        )
+    figure.update_layout(
+        template="plotly_dark", title=title, xaxis_title="Date", yaxis_title=value_key
+    )
+    return figure
+
+
+def _stock_returns_histogram(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    rows = [row for row in stock.get("simple_returns", []) if isinstance(row, dict)]
+    figure = go.Figure()
+    figure.add_trace(go.Histogram(x=[row.get("return") for row in rows], nbinsx=60, name="Returns"))
+    figure.update_layout(template="plotly_dark", title="Returns distribution", xaxis_title="Return")
+    return figure
+
+
+def _stock_var_figure(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    var_payload = _mapping(stock.get("var"))
+    rows = []
+    for model in ("historical", "parametric_normal", "monte_carlo"):
+        payload = _mapping(var_payload.get(model))
+        rows.append({"model": model, "metric": "VaR", "value": payload.get("var")})
+        rows.append({"model": model, "metric": "ES", "value": payload.get("expected_shortfall")})
+    figure = go.Figure()
+    for metric in ("VaR", "ES"):
+        selected = [row for row in rows if row["metric"] == metric]
+        figure.add_trace(
+            go.Bar(
+                name=metric,
+                x=[row["model"] for row in selected],
+                y=[row["value"] for row in selected],
+            )
+        )
+    figure.update_layout(template="plotly_dark", title="VaR / ES comparison", barmode="group")
+    return figure
+
+
+def _stock_mc_paths_figure(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    normal_mc = _mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal"))
+    rows = _rows(normal_mc.get("paths_sample"))
+    figure = go.Figure()
+    for path_id in sorted({row.get("path_id") for row in rows})[:15]:
+        path_rows = [row for row in rows if row.get("path_id") == path_id]
+        figure.add_trace(
+            go.Scatter(
+                x=[row.get("step") for row in path_rows],
+                y=[row.get("value") for row in path_rows],
+                mode="lines",
+                name=f"path {path_id}",
+                opacity=0.35,
+            )
+        )
+    figure.update_layout(template="plotly_dark", title="Monte Carlo paths", xaxis_title="Step")
+    return figure
+
+
+def _stock_mc_fan_figure(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    normal_mc = _mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal"))
+    rows = _rows(normal_mc.get("fan_chart"))
+    figure = go.Figure()
+    for percentile in ("p5", "p25", "p50", "p75", "p95"):
+        figure.add_trace(
+            go.Scatter(
+                x=[row.get("step") for row in rows],
+                y=[row.get(percentile) for row in rows],
+                mode="lines",
+                name=percentile.upper(),
+            )
+        )
+    figure.update_layout(template="plotly_dark", title="Monte Carlo percentile fan")
+    return figure
+
+
+def _stock_ml_prediction_figure(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    rows = _rows(_mapping(stock.get("ml_forecasting")).get("prediction_rows"))
+    figure = go.Figure()
+    for key, name in (("actual_return", "Actual"), ("model_prediction", "Predicted")):
+        figure.add_trace(
+            go.Scatter(
+                x=[row.get("timestamp") for row in rows],
+                y=[row.get(key) for row in rows],
+                mode="lines",
+                name=name,
+            )
+        )
+    figure.update_layout(template="plotly_dark", title="ML predicted vs actual returns")
+    return figure
+
+
+def _stock_backtest_figure(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    backtests = _mapping(stock.get("backtesting_results"))
+    figure = go.Figure()
+    for name, payload in backtests.items():
+        rows = _rows(_mapping(payload).get("equity_curve"))
+        figure.add_trace(
+            go.Scatter(
+                x=[row.get("timestamp") for row in rows],
+                y=[row.get("equity") for row in rows],
+                mode="lines",
+                name=str(name),
+            )
+        )
+    figure.update_layout(template="plotly_dark", title="Backtest equity curves")
+    return figure
+
+
+def _stock_options_payoff_figure(stock: dict[str, Any]):  # noqa: ANN201
+    go = _charts_mod._plotly_go()  # noqa: SLF001
+    options = _mapping(stock.get("options_theoretical_analytics"))
+    rows = _rows(options.get("payoff_profile"))
+    protective = _rows(options.get("protective_put_payoff"))
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=[row.get("underlying_price") for row in rows],
+            y=[row.get("payoff") for row in rows],
+            mode="lines",
+            name="Call payoff",
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[row.get("underlying_price") for row in protective],
+            y=[row.get("net_payoff") for row in protective],
+            mode="lines",
+            name="Protective put net payoff",
+        )
+    )
+    figure.update_layout(template="plotly_dark", title="Options payoff")
+    return figure
+
+
+def _render_stock_report_links(st, snapshot: dict[str, Any], asset_id: str) -> None:  # noqa: ANN001
+    reports = [
+        row
+        for row in snapshot["reports"]
+        if row.get("report_type") == "academic_stock_report"
+        and row.get("summary", {}).get("asset_id") == asset_id
+    ]
+    if not reports:
+        st.info("No academic report metadata found for this stock yet.")
+        st.code(
+            "py -3 -m quant_platform.cli generate-stock-academic-report "
+            f"--asset {asset_id} --terminal-report "
+            "reports/generated/quant_terminal/3stocks_10y_report.json "
+            "--format md --format html --format pdf --include-figures --overwrite",
+            language="powershell",
+        )
+        return
+    metadata = read_json_report(reports[-1]["path"])
+    outputs = _mapping(metadata.get("outputs"))
+    st.markdown("### Academic report")
+    st.write(f"Markdown: `{outputs.get('md', 'not generated')}`")
+    st.write(f"HTML: `{outputs.get('html', 'not generated')}`")
+    pdf_status = outputs.get("pdf", metadata.get("pdf_export", {}).get("status", "not generated"))
+    st.write(f"PDF: `{pdf_status}`")
+
+
+def _ml_summary_row(ml: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": ml.get("status"),
+        "rmse": ml.get("rmse"),
+        "mae": ml.get("mae"),
+        "directional_accuracy": ml.get("directional_accuracy"),
+        "baseline_directional_accuracy": ml.get("baseline_directional_accuracy"),
+        "information_coefficient": ml.get("information_coefficient"),
+        "strategy_sharpe": ml.get("strategy_sharpe"),
+    }
 
 
 def _render_home(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) -> None:  # noqa: ANN001
@@ -693,7 +1001,7 @@ def _render_actions(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) ->
 
 def _render_risks(st, pd, snapshot: dict[str, Any], status: dict[str, Any]) -> None:  # noqa: ARG001, ANN001
     st.subheader("Riesgos y limites")
-    st.warning("No es asesoramiento financiero. Backtest no garantiza resultados futuros.")
+    st.warning("No es asesoramiento financiero. Backtest no implica resultados futuros.")
     st.info("Datos demo, si existen, se marcan como DEMO_SYNTHETIC_NOT_REAL_DATA.")
     st.dataframe(_safe_df(pd, all_explainers()), use_container_width=True, hide_index=True)
     with st.expander("Mensajes clave"):
@@ -831,6 +1139,28 @@ def _safe_df(pd, rows: object):  # noqa: ANN001, ANN202
             }
         )
     return pd.DataFrame(normalized)
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _rows(value: object) -> list[dict[str, Any]]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+
+def _pct(value: object) -> str:
+    try:
+        return f"{float(value):.2%}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _num(value: object) -> str:
+    try:
+        return f"{float(value):,.4f}"
+    except (TypeError, ValueError):
+        return "N/A"
 
 
 def _format_metric(value: object) -> str:

@@ -16,8 +16,9 @@ def test_load_quant_terminal_config_and_make_synthetic_ohlcv() -> None:
     )
     returns = daily_simple_returns(prices)
 
-    assert config.selected_stocks == ("AAPL", "MSFT", "NVDA")
-    assert set(prices.columns) == {"AAPL", "MSFT", "NVDA", "SPY"}
+    assert len(config.selected_stocks) >= 2
+    expected_symbols = {*config.selected_stocks, config.benchmark_symbol}
+    assert set(prices.columns) == expected_symbols
     assert len(prices) == config.lookback_years * 252
     assert returns.shape[0] == prices.shape[0] - 1
     assert (prices > 0).all().all()

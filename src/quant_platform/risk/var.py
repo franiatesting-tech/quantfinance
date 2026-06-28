@@ -21,6 +21,11 @@ def _validate_alpha(alpha: float) -> float:
 
 
 def _validate_losses(losses: ArrayLike) -> np.ndarray:
+    """Validate that losses are numeric, finite, non-empty.
+
+    Convention: losses = -returns (standard convention, can be negative).
+    A negative loss means a gain at the given confidence level.
+    """
     try:
         values = np.asarray(losses, dtype=float).reshape(-1)
     except (TypeError, ValueError) as exc:
@@ -29,8 +34,6 @@ def _validate_losses(losses: ArrayLike) -> np.ndarray:
         raise RiskMetricError("losses must not be empty.")
     if not np.isfinite(values).all():
         raise RiskMetricError("losses must not contain NaN or infinite values.")
-    if (values < 0).any():
-        raise RiskMetricError("losses must be positive losses, so values must be >= 0.")
     return values
 
 

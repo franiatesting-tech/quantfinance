@@ -32,6 +32,7 @@ from quant_platform.research.backtesting_strategies import (
     serialize_backtest_result,
 )
 from quant_platform.research.bibliography import method_catalog
+from quant_platform.research.decision_engine import build_research_decision_signal
 from quant_platform.research.efficient_frontier import (
     capital_allocation_line,
     frontier_scatter_rows,
@@ -39,6 +40,7 @@ from quant_platform.research.efficient_frontier import (
 from quant_platform.research.exposure import exposure_profile, simulate_exposure_paths
 from quant_platform.research.fixed_income import bond_summary
 from quant_platform.research.hedging import hedge_contract_count, minimum_variance_hedge_ratio
+from quant_platform.research.ml_forecasting import run_walk_forward_forecast
 from quant_platform.research.monte_carlo import (
     simulate_block_bootstrap_returns,
     simulate_bootstrap_returns,
@@ -51,7 +53,9 @@ from quant_platform.research.options import (
     binomial_crr_price,
     black_scholes_greeks,
     black_scholes_price,
+    option_scenario_table,
     payoff_profile,
+    protective_put_payoff,
     put_call_parity_gap,
 )
 from quant_platform.research.portfolio import compute_portfolio_analytics, portfolio_returns
@@ -191,7 +195,11 @@ def build_quant_terminal_report_from_ohlcv(
     var_summary = compute_var_summary(
         max_sharpe_returns,
         alpha=0.95,
-        simulated_returns=_terminal_returns_from_fan(mc_summary),
+        simulated_returns=_portfolio_mc_daily_distribution(
+            asset_returns,
+            optimization["max_sharpe"]["weights"],
+            config,
+        ),
     )
     backtests = run_terminal_backtests(
         asset_prices,
@@ -273,6 +281,12 @@ def build_quant_terminal_report_from_ohlcv(
         "bibliography": bibliography,
         "single_assets": single_assets,
         "stocks": stocks,
+        "ml_forecasting": {
+            symbol: stock.get("ml_forecasting", {}) for symbol, stock in stocks.items()
+        },
+        "decision_signals": {
+            symbol: stock.get("decision_signal", {}) for symbol, stock in stocks.items()
+        },
         "portfolio": portfolio,
         "optimization": optimization,
         "monte_carlo": mc_summary,
@@ -403,7 +417,27 @@ def _stocks_section(
         var_summary = compute_var_summary(
             return_series,
             alpha=0.95,
-            simulated_returns=pd.Series(mc["parametric_normal"]["terminal_distribution"]),
+            simulated_returns=_stock_mc_daily_distribution(return_series, config, position),
+        )
+        metrics_summary = _stock_metric_summary(
+            return_series, equity_curve, single_assets[str(symbol)]
+        )
+        backtesting_results = _single_stock_backtest_section(return_series)
+        options_results = options.get(str(symbol), {})
+        ml_results = run_walk_forward_forecast(
+            price_series,
+            volume=volume_series,
+            benchmark_returns=benchmark_returns,
+            min_train_size=756,
+            max_test_observations=63,
+        )
+        decision_signal = build_research_decision_signal(
+            metrics=metrics_summary,
+            var_results=var_summary,
+            monte_carlo=mc,
+            ml_forecasting=ml_results,
+            backtesting=backtesting_results,
+            data_quality_warnings=sorted(set(data_warnings)),
         )
         rows[str(symbol)] = {
             "asset_id": str(symbol),
@@ -421,6 +455,7 @@ def _stocks_section(
                 "start_timestamp": pd.Timestamp(return_series.index[0]).isoformat(),
                 "end_timestamp": pd.Timestamp(return_series.index[-1]).isoformat(),
                 "observations": int(len(return_series)),
+                "last_close": float(price_series.iloc[-1]) if price_series is not None else None,
             },
             "ohlcv_summary": _ohlcv_summary(ohlcv, str(symbol)),
             "data_quality": _stock_data_quality(ohlcv, str(symbol), price_series, volume_series),
@@ -433,13 +468,13 @@ def _stocks_section(
             "rolling_volatility": _series_rows(rolling["rolling_volatility"], "rolling_volatility"),
             "rolling_sharpe": _series_rows(rolling["rolling_sharpe"], "rolling_sharpe"),
             "rolling_beta": _series_rows(rolling["rolling_beta"], "rolling_beta"),
-            "metrics": _stock_metric_summary(
-                return_series, equity_curve, single_assets[str(symbol)]
-            ),
+            "metrics": metrics_summary,
             "var": var_summary,
             "monte_carlo": mc,
-            "backtesting_results": _single_stock_backtest_section(return_series),
-            "options_theoretical_analytics": options.get(str(symbol), {}),
+            "ml_forecasting": ml_results,
+            "decision_signal": decision_signal,
+            "backtesting_results": backtesting_results,
+            "options_theoretical_analytics": options_results,
             "warnings": sorted(set(data_warnings)),
             "bibliography_references": method_catalog(),
         }
@@ -569,7 +604,7 @@ def _stock_metric_summary(
         "calmar_ratio": calmar_ratio(returns, 252),
         "hit_rate": hit_rate(returns),
         "skewness": float(returns.skew()),
-        "kurtosis": float(returns.kurtosis()),
+        "kurtosis": float(returns.kurtosis() + 3.0),
         "final_cumulative_return": float(equity_curve.iloc[-1] - 1.0),
         "max_drawdown": float(max_drawdown(equity_curve)),
     }
@@ -686,9 +721,35 @@ def _monte_carlo_section(
     return summary
 
 
-def _terminal_returns_from_fan(mc_summary: dict[str, Any]) -> pd.Series:
-    values = mc_summary.get("terminal_returns", [])
-    return pd.Series(values, dtype=float)
+def _portfolio_mc_daily_distribution(
+    returns: pd.DataFrame,
+    weights: dict[str, float],
+    config: QuantTerminalConfig,
+) -> pd.Series:
+    mc_config = config.monte_carlo
+    paths = simulate_portfolio_normal_returns(
+        returns,
+        weights,
+        horizon_days=int(mc_config.get("horizon_days", 252)),
+        n_paths=int(mc_config.get("n_paths", 1000)),
+        seed=int(mc_config.get("seed", 42)),
+    )
+    return pd.Series(paths.reshape(-1), dtype=float)
+
+
+def _stock_mc_daily_distribution(
+    returns: pd.Series,
+    config: QuantTerminalConfig,
+    seed_offset: int,
+) -> pd.Series:
+    mc_config = config.monte_carlo
+    paths = simulate_normal_returns(
+        returns,
+        horizon_days=int(mc_config.get("horizon_days", 252)),
+        n_paths=int(mc_config.get("n_paths", 1000)),
+        seed=int(mc_config.get("seed", 42)) + seed_offset,
+    )
+    return pd.Series(paths.reshape(-1), dtype=float)
 
 
 def _options_section(
@@ -731,10 +792,10 @@ def _options_section(
             "black_scholes_call": call,
             "black_scholes_put": put,
             "binomial_call": binomial_crr_price(
-                spot, strike, risk_free_rate, volatility, maturity, steps, "call"
+                spot, strike, risk_free_rate, volatility, maturity, steps, "call", dividend_yield
             ),
             "binomial_put": binomial_crr_price(
-                spot, strike, risk_free_rate, volatility, maturity, steps, "put"
+                spot, strike, risk_free_rate, volatility, maturity, steps, "put", dividend_yield
             ),
             "call_greeks": black_scholes_greeks(
                 spot,
@@ -752,8 +813,18 @@ def _options_section(
                 strike,
                 risk_free_rate,
                 maturity,
+                dividend_yield,
             ),
             "payoff_profile": payoff_profile(spot, strike, "call"),
+            "protective_put_payoff": protective_put_payoff(spot, strike, put),
+            "scenario_table": option_scenario_table(
+                spot,
+                risk_free_rate,
+                volatility,
+                maturity,
+                dividend_yield,
+                steps,
+            ),
             "model_status": "PARAMETRIC_EDUCATIONAL_MODEL",
             "real_market_status": "DATA_REQUIRED_FOR_REAL_MARKET_VALUATION",
         }

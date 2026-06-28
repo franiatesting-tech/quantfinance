@@ -26,6 +26,10 @@ ui = [
     "plotly>=5.20",
     "streamlit>=1.37",
 ]
+latex = [
+    "plotly>=5.20",
+    "kaleido>=0.2",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

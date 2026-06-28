@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from quant_platform.reporting.academic_figures import (
     FIGURE_FILENAMES,
     write_academic_stock_figures,
 )
+from quant_platform.reporting.pdf_export import export_html_report_to_pdf
 from quant_platform.research.bibliography import method_catalog
 
 SECTION_TITLES = [
@@ -26,20 +28,21 @@ SECTION_TITLES = [
     "7. Price Dynamics",
     "8. Return Construction",
     "9. Performance Metrics",
-    "10. Risk Metrics",
-    "11. CAPM-Based Metrics",
-    "12. Value at Risk Analysis",
-    "13. Monte Carlo Simulation",
+    "10. CAPM Metrics",
+    "11. Value at Risk Analysis",
+    "12. Monte Carlo Simulation",
+    "13. ML Forecasting Assessment",
     "14. Backtesting Analysis",
     "15. Options Analytics",
     "16. Comparison Against Benchmark",
-    "17. Statistical Interpretation",
-    "18. Model Performance Assessment",
-    "19. Stock-Specific Conclusions",
-    "20. Limitations",
-    "21. Reproducibility",
-    "22. Mathematical Appendix",
-    "23. Bibliography & Method Traceability",
+    "17. Quantitative Decision Signal",
+    "18. Statistical Interpretation",
+    "19. Model Performance Assessment",
+    "20. Stock-Specific Conclusions",
+    "21. Limitations",
+    "22. Reproducibility",
+    "23. Mathematical Appendix",
+    "24. Bibliography & Method Traceability",
 ]
 
 FORMULAS = [
@@ -53,11 +56,11 @@ FORMULAS = [
     ("Beta", "Beta_i = Cov(R_i, R_m) / Var(R_m)"),
     ("Treynor", "Treynor_i = (R_i - R_f) / Beta_i"),
     ("Jensen alpha", "Alpha_i = R_i - [R_f + Beta_i * (R_m - R_f)]"),
-    ("Historical VaR", "VaR_alpha(L) = quantile_alpha(L), L=max(-R, 0)"),
+    ("Historical VaR", "VaR_alpha(L) = quantile_alpha(L), L=-R_t"),
     ("Expected Shortfall", "ES_alpha = E[L | L >= VaR_alpha]"),
     ("GBM", "S_t = S_0 exp((mu - 0.5 sigma^2)t + sigma W_t)"),
-    ("Black-Scholes call", "C = S N(d1) - K exp(-rT) N(d2)"),
-    ("Put-call parity", "C - P = S - K exp(-rT)"),
+    ("Black-Scholes call", "C = S exp(-qT) N(d1) - K exp(-rT) N(d2)"),
+    ("Put-call parity", "C - P = S exp(-qT) - K exp(-rT)"),
 ]
 
 
@@ -76,7 +79,7 @@ def build_stock_academic_report_model(full_report: dict[str, Any], asset_id: str
     stock = stocks[asset_id]
     if not isinstance(stock, dict):
         raise AcademicStockReportError(f"Stock payload for {asset_id} must be an object.")
-    conclusions = build_stock_conclusions(stock)
+    conclusions = build_stock_conclusions(stock, asset_id=asset_id)
     model = {
         "asset_id": asset_id,
         "generated_at": datetime.now(tz=UTC).isoformat(),
@@ -144,10 +147,13 @@ def render_stock_report_markdown(report_model: dict[str, Any]) -> str:
 
 
 def render_stock_report_html(report_model: dict[str, Any]) -> str:
-    """Render one stock academic report as standalone HTML."""
+    """Render one stock academic report as standalone HTML with inline figures."""
 
     markdown = render_stock_report_markdown(report_model)
     body = _markdown_to_basic_html(markdown)
+    figure_paths = report_model.get("figure_paths", {})
+    if figure_paths:
+        body = _embed_figures_inline(body, figure_paths, str(report_model.get("asset_id", "")))
     asset_id = html.escape(str(report_model["asset_id"]))
     return f"""<!doctype html>
 <html lang="en">
@@ -155,16 +161,20 @@ def render_stock_report_html(report_model: dict[str, Any]) -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{asset_id} Academic Quant Research Report</title>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
   <style>
     body {{ background: #081018; color: #e8ecef; font-family: Georgia, 'Times New Roman', serif; margin: 0; line-height: 1.6; }}
     main {{ max-width: 1120px; margin: 0 auto; padding: 48px 28px 80px; }}
     h1, h2, h3 {{ color: #f2d27a; font-family: Aptos, Segoe UI, sans-serif; }}
     a {{ color: #3dd6c6; }}
-    code, pre {{ background: #121c25; color: #f2f0df; padding: 2px 6px; border-radius: 6px; }}
+    code, pre {{ background: #121c25; color: #f2f0df; padding: 2px 6px; border-radius: 6px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }}
     table {{ border-collapse: collapse; width: 100%; margin: 18px 0; }}
     th, td {{ border: 1px solid #2c3a46; padding: 8px 10px; vertical-align: top; }}
     th {{ background: #142231; color: #f2d27a; }}
     .warning {{ border: 1px solid #d66a4a; padding: 14px; border-radius: 12px; background: rgba(214,106,74,0.12); }}
+    .figure-box {{ background: #0d1520; border: 1px solid #2c3a46; border-radius: 12px; padding: 12px; margin: 18px 0; }}
+    .figure-box .plotly-graph-div {{ height: 450px !important; }}
+    .mjx-chtml {{ font-size: 110% !important; }}
   </style>
 </head>
 <body><main>{body}</main></body>
@@ -198,15 +208,22 @@ def write_stock_academic_report(
         markdown_path = stock_dir / f"{asset_id}_academic_report.md"
         markdown_path.write_text(render_stock_report_markdown(report_model), encoding="utf-8")
         outputs["md"] = str(markdown_path)
-    if "html" in format_set:
-        html_path = stock_dir / f"{asset_id}_academic_report.html"
+    html_path = stock_dir / f"{asset_id}_academic_report.html"
+    if "html" in format_set or "pdf" in format_set:
         html_path.write_text(render_stock_report_html(report_model), encoding="utf-8")
         outputs["html"] = str(html_path)
+    pdf_export: dict[str, Any] | None = None
+    if "pdf" in format_set:
+        pdf_path = stock_dir / f"{asset_id}_academic_report.pdf"
+        pdf_export = export_html_report_to_pdf(html_path, pdf_path)
+        if pdf_export.get("success") and pdf_export.get("pdf_path"):
+            outputs["pdf"] = str(pdf_export["pdf_path"])
     metadata = {
         "report_type": "academic_stock_report_metadata",
         "asset_id": asset_id,
         "generated_at": datetime.now(tz=UTC).isoformat(),
         "outputs": outputs,
+        "pdf_export": pdf_export,
         "figures": figure_paths,
         "formats": sorted(format_set),
         "research_only": True,
@@ -263,7 +280,7 @@ def _render_section(title: str, report_model: dict[str, Any]) -> list[str]:
     if formulas:
         lines.extend(["### Formulas", ""])
         for name, formula in formulas:
-            lines.append(f"- **{name}:** `{formula}`")
+            lines.append(f"- **{name}:** $$ {formula} $$")
         lines.append("")
     lines.extend(["### Parametros y datos usados", ""])
     lines.append(
@@ -281,7 +298,7 @@ def _render_section(title: str, report_model: dict[str, Any]) -> list[str]:
     lines.append("")
     if section_key == "Data & Provenance":
         lines.extend([_data_table(stock), ""])
-    if section_key in {"Performance Metrics", "Risk Metrics", "CAPM-Based Metrics"}:
+    if section_key in {"Performance Metrics", "CAPM Metrics", "Quantitative Decision Signal"}:
         lines.extend([_metrics_table(metrics), ""])
     if section_key == "Bibliography & Method Traceability":
         lines.extend([_bibliography_table(report_model), ""])
@@ -327,64 +344,134 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "No reemplaza auditoria profesional de corporate actions, delistings o licencias.",
         ),
         "Price Dynamics": (
-            "El precio muestra la evolucion historica; drawdown muestra caidas desde maximos previos.",
-            "La dinamica de precio se observa junto a volumen y drawdown para separar tendencia, actividad y riesgo de caida.",
+            "GRAFICA A (Price History): evolucion del precio de cierre ajustado. Muestra la tendencia de largo plazo "
+            "y permite identificar visualmente periodos alcistas, bajistas y de lateralizacion. "
+            "GRAFICA B (Volume): volumen de negociacion diario. Picos de volumen suelen coincidir con eventos "
+            "significativos (resultados, noticias macro, cambios de tendencia). "
+            "GRAFICA C (Drawdown): caida porcentual desde el maximo historico. Identifica visualmente las "
+            "correcciones y el riesgo de caida real experimentado. El drawdown maximo es la peor caida registrada.",
+            "El precio de cierre se obtiene de OHLCV diario. Drawdown = (P_t / max_{s<=t} P_s) - 1. "
+            "Volumen en acciones negociadas. Estas tres series combinadas permiten evaluar: "
+            "(1) tendencia direccional, (2) liquidez y actividad, (3) riesgo de caida real.",
             [("Max drawdown", "DD_t = V_t / max_{s<=t}(V_s) - 1")],
             ["price_history", "volume", "drawdown"],
             common_limit,
         ),
         "Return Construction": (
-            "Los retornos convierten precios en cambios comparables dia a dia.",
-            "Se calculan retornos simples, log-retornos y retorno acumulado con composicion continua via Euler.",
+            "GRAFICA D (Simple Returns): retorno diario simple, muestra magnitud de movimientos. "
+            "GRAFICA E (Log Returns): retorno logaritmico, usado en modelos continuos. "
+            "GRAFICA F (Cumulative Returns): crecimiento de 100 EUR, muestra el poder del interes compuesto. "
+            "GRAFICA G (Returns Distribution): histograma de retornos diarios con media marcada. "
+            "Interpretacion economica: la prima de riesgo historica se refleja en la pendiente de F. "
+            "Cuanto mas pronunciada la curva F, mayor rentabilidad compuesta.",
+            "R_t = P_t/P_{t-1} - 1. r_t = ln(P_t/P_{t-1}). "
+            "V_t = 100 * prod(1+R_s). Retorno anualizado = media(R_t) * 252. "
+            "La relacion entre R_t y r_t: r_t = ln(1+R_t). Para R_t pequeno, son casi iguales.",
             FORMULAS[:3],
-            ["simple_returns", "log_returns", "returns_distribution", "cumulative_returns"],
+            ["simple_returns", "log_returns", "cumulative_returns", "returns_distribution"],
             common_limit,
         ),
         "Performance Metrics": (
-            "Las metricas resumen rendimiento y consistencia historica.",
-            "Se anualizan retornos y volatilidad con 252 sesiones y se reportan ratios ajustados por riesgo.",
+            "GRAFICA F (Cumulative Returns): 100 EUR invertidos al inicio. "
+            "GRAFICA I (Rolling Sharpe): eficiencia riesgo-retorno a lo largo del tiempo. "
+            "TABLA DE METRICAS: Annualized Return, CAGR, Volatilidad, Sharpe, Sortino, Calmar, Hit Rate. "
+            "Interpretacion economica: Sharpe > 1 indica que el retorno compensa el riesgo total. "
+            "Sortino > 1 indica que compensa especificamente el riesgo de caida. "
+            "Calmar relaciona el retorno anual con el peor drawdown: un Calmar alto es senal de solidez.",
+            "R_p = media(R_t)*252. sigma_p = std(R_t)*sqrt(252). "
+            "Sharpe = (R_p - R_f)/sigma_p. Sortino = (R_p - R_f)/downside_dev. "
+            "Calmar = R_p/|max_drawdown|. Hit rate = count(R_t > 0)/N. "
+            "Todas las metricas son historicas y ventana-dependentes.",
             FORMULAS[3:6],
             ["cumulative_returns", "rolling_sharpe"],
             common_limit,
         ),
         "Risk Metrics": (
-            "Riesgo no es solo volatilidad; tambien importan drawdown, colas y asimetria.",
-            "Se revisan drawdown, skewness, kurtosis, volatilidad rolling y distribucion de retornos.",
+            "GRAFICA C (Drawdown): caidas desde maximos historicos. "
+            "GRAFICA H (Rolling Volatility): volatilidad movil 63 sesiones. "
+            "GRAFICA G (Returns Distribution): histograma con asimetria y curtosis visibles. "
+            "Interpretacion economica: un activo con drawdown >30% requiere alta tolerancia al riesgo. "
+            "Skewness negativo significa que las caidas extremas son mas probables que las subidas extremas. "
+            "Kurtosis > 3 implica colas mas gruesas que la normal: eventos extremos mas frecuentes.",
+            "sigma_rolling = rolling_std(R_t, window=63) * sqrt(252). "
+            "Skewness = E[(R-mu)^3]/sigma^3. Kurtosis = E[(R-mu)^4]/sigma^4. "
+            "Max DD = min(P_t/max_{s<=t}P_s - 1). "
+            "Estas metricas describen el riesgo real experimentado, no solo la volatilidad.",
             FORMULAS[3:7],
             ["drawdown", "rolling_volatility", "returns_distribution"],
             common_limit,
         ),
-        "CAPM-Based Metrics": (
-            "CAPM compara el stock con un benchmark de mercado aproximado.",
-            "Beta, Treynor y Jensen alpha se calculan contra el benchmark y tasa libre de riesgo usada.",
+        "CAPM Metrics": (
+            "GRAFICA J (Rolling Beta): estabilidad de la sensibilidad al mercado. "
+            "TABLA CAPM: Beta, Treynor, Jensen Alpha. "
+            "Interpretacion economica: Beta indica cuanto riesgo de mercado tiene el activo. "
+            "Alpha positivo significa que el activo rindio mas de lo esperado por su riesgo sistematico. "
+            "Si Beta es cercano a 0, el activo es casi independiente del mercado (defensivo/descCorrelacionado).",
+            "Beta_i = Cov(R_i, R_m)/Var(R_m). Alpha_i = R_i - [R_f + Beta_i*(R_m - R_f)]. "
+            "Treynor_i = (R_i - R_f)/Beta_i. CAPM: E[R_i] = R_f + Beta_i*(E[R_m]-R_f). "
+            "Beta estima el riesgo sistematico; alpha mide el valor anadido (o destruido).",
             FORMULAS[7:10],
             ["rolling_beta"],
             "El benchmark no es el mercado completo y beta puede cambiar por ventana temporal.",
         ),
         "Value at Risk Analysis": (
-            "VaR estima un umbral de perdida; ES estima la perdida media en la cola mala.",
-            "Se comparan VaR/ES historico, normal parametrico y Monte Carlo con perdidas positivas.",
+            "GRAFICA K (VaR/ES Comparison): comparacion de modelos (historico, normal, MC). "
+            "GRAFICA G (Returns Distribution): la cola izquierda muestra donde estan las perdidas. "
+            "Interpretacion economica: VaR 95% = perdida que no se supera el 95% de los dias. "
+            "ES 95% = perdida media en el peor 5% de los dias. "
+            "Si ES >> VaR, la cola es gruesa: las perdidas extremas son mucho peores que el umbral.",
+            "VaR_alpha(L) = quantile_alpha(L), L = -R (perdida positiva). "
+            "ES_alpha = E[L | L >= VaR_alpha]. Alpha = 95%. "
+            "Tres modelos: historico (empirico), normal parametrico, Monte Carlo.",
             FORMULAS[10:12],
             ["var_comparison", "returns_distribution"],
             "VaR no mide todo lo que ocurre mas alla del umbral y depende del modelo.",
         ),
         "Monte Carlo Simulation": (
-            "Monte Carlo crea escenarios posibles bajo reglas explicitas, no predicciones.",
-            "Se usan bootstrap historico, block bootstrap, normal parametrico y GBM baseline con seed reproducible.",
+            "GRAFICA L (MC Paths): 25 trayectorias simuladas de 1000. "
+            "GRAFICA M (MC Percentiles): P5, P25, P50, P75, P95. "
+            "GRAFICA N (MC Terminal Distribution): histograma de resultados finales. "
+            "Interpretacion economica: la dispersion entre P5 y P95 mide la incertidumbre. "
+            "P50 (mediana) es el escenario central. Probabilidad de perdida = % de simulaciones con resultado < 0. "
+            "Un activo con P5 muy negativo pero P95 muy positivo tiene alta dispersion (alto riesgo).",
+            "GBM: S_t = S_0 exp((mu - 0.5*sigma^2)t + sigma*W_t). "
+            "1000 simulaciones, horizonte 252 dias. Parametros estimados de la serie historica. "
+            "Percentiles empiricos de la distribucion terminal. Seed reproducible.",
             [("GBM", FORMULAS[12][1])],
             ["monte_carlo_paths", "monte_carlo_percentiles", "monte_carlo_terminal_distribution"],
             "Cambiar modelo, seed, horizonte o ventana puede cambiar las conclusiones simuladas.",
         ),
+        "ML Forecasting Assessment": (
+            "Esta seccion evalua si un modelo predictivo supera baselines simples en validacion walk-forward.",
+            "Los targets permitidos son retorno proximo, retorno forward a 5 dias y direccion proxima. "
+            "La validacion no mezcla futuro con pasado: cada test ocurre despues de su periodo de entrenamiento.",
+            [],
+            ["ml_prediction_vs_actual", "ml_residuals"],
+            "Un modelo que no supera el baseline naive debe marcarse como diagnostico debil, no como prediccion fiable.",
+        ),
         "Backtesting Analysis": (
-            "El backtest simula reglas historicas con capital ficticio.",
-            "La convencion usa datos disponibles hasta t y ejecucion t+1 para evitar look-ahead.",
+            "GRAFICA O (Backtest Equity Curves): capital ficticio de cada estrategia. "
+            "Interpretacion economica: buy-and-hold con 10.000 EUR iniciales. "
+            "El equity final muestra la rentabilidad neta. "
+            "El drawdown del backtest muestra el riesgo real de la estrategia. "
+            "Comparacion entre estrategias indica que reglas funcionaron mejor en el pasado.",
+            "Equity curve: V_t = V_0 * prod(1 + R_s * signal_s). "
+            "Convencion: datos disponibles hasta t, ejecucion en t+1 (sin look-ahead). "
+            "Estrategias: buy-and-hold (referencia pasiva), y otras segun config.",
             [("Equity curve", "V_t = V_0 prod_{s<=t}(1+R_s)")],
             ["backtest_equity_curves"],
             "No modela fills reales, liquidez intradia ni impacto de mercado profesional.",
         ),
         "Options Analytics": (
-            "Las opciones se valoran teoricamente para explicar sensibilidades, no para cotizar mercado real.",
-            "Black-Scholes, CRR, paridad put-call y Greeks usan spot, strike ATM, volatilidad historica, maturity y tasa.",
+            "GRAFICA P (Options Payoff): perfil de pago de opcion call. "
+            "GRAFICA Q (Greeks): sensibilidades BSM. "
+            "Interpretacion economica: opciones permiten apalancar o cubrir posiciones. "
+            "Delta indica cuantas unidades del subyacente replica una opcion. "
+            "Gamma mide cuanto cambia Delta. Vega mide sensibilidad a la volatilidad. "
+            "Theta mide perdida de valor por paso del tiempo.",
+            "Black-Scholes: C = S*N(d1) - K*e^{-rT}*N(d2). P = C - S + K*e^{-rT}. "
+            "Griegas: dC/dS, d2C/dS2, dC/dsigma, dC/dt, dC/dr. "
+            "Strike ATM, madurez 30 dias, volatilidad historica, tipo libre de riesgo.",
             FORMULAS[13:15],
             ["options_payoff", "greeks"],
             "PARAMETRIC_EDUCATIONAL_MODEL: sin option chain, smile, dividendos reales ni microestructura.",
@@ -416,6 +503,15 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             [],
             [],
             "No debe interpretarse como asesoramiento financiero ni prediccion.",
+        ),
+        "Quantitative Decision Signal": (
+            "Research-only quantitative decision signal resume metricas historicas, riesgo de cola, "
+            "Monte Carlo, ML, backtests y calidad de datos en una salida no operativa.",
+            "Valores permitidos: FAVORABLE, NEUTRAL, CAUTION, UNFAVORABLE, INSUFFICIENT_DATA. "
+            "La senal describe evidencia historica bajo supuestos; no calcula posicion, acciones ni capital.",
+            [],
+            ["decision_score_decomposition"],
+            "This is not investment advice. It is a quantitative research signal based on historical data, assumptions, and model limitations.",
         ),
         "Limitations": (
             "Todo modelo simplifica la realidad.",
@@ -452,12 +548,14 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
 def _section_conclusion(section: str, conclusions: dict[str, Any]) -> str:
     mapping = {
         "Performance Metrics": "Historical performance",
-        "Risk Metrics": "Risk profile",
-        "CAPM-Based Metrics": "CAPM interpretation",
+        "CAPM Metrics": "CAPM interpretation",
         "Value at Risk Analysis": "Tail-risk interpretation",
         "Monte Carlo Simulation": "Monte Carlo interpretation",
+        "ML Forecasting Assessment": "ML forecasting interpretation",
         "Backtesting Analysis": "Backtesting interpretation",
         "Options Analytics": "Options interpretation",
+        "Quantitative Decision Signal": "Decision signal",
+        "Statistical Interpretation": "Risk profile",
         "Stock-Specific Conclusions": "Overall research conclusion",
     }
     key = mapping.get(section)
@@ -523,7 +621,7 @@ def _metrics_table(metrics: dict[str, Any]) -> str:
 def _formula_table() -> str:
     rows = ["| Formula | Expression |", "| --- | --- |"]
     for name, formula in FORMULAS:
-        rows.append(f"| {name} | `{formula}` |")
+        rows.append(f"| {name} | $$ {formula} $$ |")
     return "\n".join(rows)
 
 
@@ -564,14 +662,25 @@ def _methods_review_summary() -> dict[str, Any]:
     }
 
 
+def _inline_markdown(text: str) -> str:
+    """Convert inline markdown syntax (bold, code, links, LaTeX math) to HTML."""
+    s = html.escape(text)
+    s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
+    s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
+    s = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', s)
+    s = re.sub(r'\$\$(.+?)\$\$', r'\\[\1\\]', s)
+    return s
+
+
 def _markdown_to_basic_html(markdown: str) -> str:
-    html_lines = []
+    html_lines: list[str] = []
     in_table = False
-    for line in markdown.splitlines():
-        if line.startswith("| ") and line.endswith(" |"):
-            if "---" in line:
-                continue
-            cells = [html.escape(cell.strip()) for cell in line.strip("|").split("|")]
+    in_list = False
+    lines = markdown.splitlines()
+    for line in lines:
+        stripped = line.strip()
+        if line.startswith("| ") and line.endswith(" |") and "---" not in line:
+            cells = [_inline_markdown(cell.strip()) for cell in stripped.strip("|").split("|")]
             tag = "th" if not in_table else "td"
             if not in_table:
                 html_lines.append(
@@ -586,21 +695,79 @@ def _markdown_to_basic_html(markdown: str) -> str:
         if in_table:
             html_lines.append("</table>")
             in_table = False
-        if line.startswith("# "):
-            html_lines.append(f"<h1>{html.escape(line[2:])}</h1>")
-        elif line.startswith("## "):
-            html_lines.append(f"<h2>{html.escape(line[3:])}</h2>")
-        elif line.startswith("### "):
-            html_lines.append(f"<h3>{html.escape(line[4:])}</h3>")
-        elif line.startswith("- "):
-            html_lines.append(f"<p>{html.escape(line)}</p>")
-        elif not line.strip():
+        if stripped.startswith("- "):
+            content = _inline_markdown(stripped[2:])
+            if not in_list:
+                html_lines.append("<ul>")
+                in_list = True
+            html_lines.append(f"<li>{content}</li>")
+            continue
+        if stripped.startswith("# "):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<h1>{_inline_markdown(stripped[2:])}</h1>")
+        elif stripped.startswith("## "):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<h2>{_inline_markdown(stripped[3:])}</h2>")
+        elif stripped.startswith("### "):
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<h3>{_inline_markdown(stripped[4:])}</h3>")
+        elif not stripped:
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
             html_lines.append("")
         else:
-            html_lines.append(f"<p>{html.escape(line)}</p>")
+            if in_list:
+                html_lines.append("</ul>")
+                in_list = False
+            html_lines.append(f"<p>{_inline_markdown(line)}</p>")
     if in_table:
         html_lines.append("</table>")
+    if in_list:
+        html_lines.append("</ul>")
     return "\n".join(html_lines)
+
+
+def _embed_figures_inline(
+    body: str, figure_paths: dict[str, str], asset_id: str
+) -> str:
+    """Replace figure text links with inline embedded Plotly figures."""
+    for name, fpath in figure_paths.items():
+        fpath_obj = Path(fpath)
+        if not fpath_obj.exists():
+            continue
+        raw = fpath_obj.read_text(encoding="utf-8")
+        div_match = re.search(
+            r'(<div\s+id="[^"]*"\s+class="plotly-graph-div"[^>]*>)\s*</div>',
+            raw,
+        )
+        script_match = re.search(
+            r'(<script>\s*window\.PLOTLYENV.*?Plotly\.newPlot\(\s*"[^"]*".*?</script>)',
+            raw,
+            re.DOTALL,
+        )
+        if not div_match or not script_match:
+            continue
+        plotly_div = div_match.group(1) + "</div>"
+        plotly_script = script_match.group(1)
+        figure_html = (
+            f'<div class="figure-box">'
+            f'<h4 style="color:#f2d27a;margin:0 0 8px;">{html.escape(name.replace("_", " ").title())}</h4>'
+            f'{plotly_div}{plotly_script}</div>'
+        )
+        filename = fpath_obj.name
+        body = re.sub(
+            rf'<li><a\s+href="[^"]*{re.escape(filename)}">[^<]*</a></li>',
+            lambda _m: figure_html,
+            body,
+        )
+    return body
 
 
 def _mapping(value: object) -> dict[str, Any]:

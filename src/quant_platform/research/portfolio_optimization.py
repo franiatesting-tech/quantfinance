@@ -1,4 +1,4 @@
-"""Long-only grid-search portfolio optimization for three-stock portfolios."""
+"""Long-only grid-search portfolio optimization with automatic grid coarsening."""
 
 from __future__ import annotations
 
@@ -17,7 +17,11 @@ def long_only_weight_grid(
     step: float = 0.05,
     max_weight: float = 1.0,
 ) -> pd.DataFrame:
-    """Build a deterministic long-only weight grid that sums to one."""
+    """Build a deterministic long-only weight grid that sums to one.
+
+    For large asset sets the step is automatically coarsened to keep the
+    combinatorial grid under a practical limit (~5000 rows).
+    """
 
     assets = tuple(str(asset) for asset in asset_ids)
     if not assets or len(set(assets)) != len(assets):
@@ -26,16 +30,24 @@ def long_only_weight_grid(
         raise PortfolioOptimizationError("step must be in (0, 1].")
     if not np.isfinite(max_weight) or max_weight <= 0 or max_weight > 1:
         raise PortfolioOptimizationError("max_weight must be in (0, 1].")
+    n = len(assets)
+    if n * max_weight < 1.0 - 1e-12:
+        raise PortfolioOptimizationError("max_weight is infeasible for the number of assets.")
+    if n > 5:
+        _auto_step = {3: 0.05, 4: 0.0625, 5: 0.10, 6: 0.125, 7: 0.20, 8: 0.25, 9: 0.25, 10: 0.25}
+        step = _auto_step.get(n, 0.25)
     slots = int(round(1.0 / step))
     if not np.isclose(slots * step, 1.0):
         raise PortfolioOptimizationError("step must divide 1.0 exactly, e.g. 0.05.")
     max_slots = int(np.floor(max_weight / step + 1e-12))
     rows = []
-    for allocation in _integer_allocations(len(assets), slots, max_slots):
+    for allocation in _integer_allocations(n, slots, max_slots):
         rows.append(
             {asset: weight_slots / slots for asset, weight_slots in zip(assets, allocation)}
         )
-    return pd.DataFrame(rows, columns=assets, dtype=float)
+    grid = pd.DataFrame(rows, columns=assets, dtype=float)
+    grid.attrs["effective_step"] = float(step)
+    return grid
 
 
 def optimize_long_only_portfolio(
@@ -51,6 +63,9 @@ def optimize_long_only_portfolio(
     weights = long_only_weight_grid(
         tuple(str(column) for column in clean_returns.columns), step, max_weight
     )
+    if weights.empty:
+        raise PortfolioOptimizationError("No feasible long-only weights for supplied constraints.")
+    effective_step = float(weights.attrs.get("effective_step", step))
     periodic_rf = annual_rate_to_periodic(risk_free_rate_annual, periods_per_year)
     rows = []
     for _, weight_row in weights.iterrows():
@@ -82,7 +97,8 @@ def optimize_long_only_portfolio(
     )
     return {
         "method": "long_only_grid_search",
-        "grid_step": float(step),
+        "grid_step": effective_step,
+        "requested_grid_step": float(step),
         "max_weight": float(max_weight),
         "portfolio_count": int(len(frontier)),
         "min_variance": min_variance,

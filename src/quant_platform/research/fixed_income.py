@@ -20,6 +20,8 @@ def bond_summary(
     """Compute bond price, duration, convexity, and bumped-price sensitivity."""
 
     _validate_bond_inputs(face_value, coupon_rate, yield_to_maturity, maturity_years, frequency)
+    if not np.isfinite(yield_bump) or yield_bump <= 0:
+        raise FixedIncomeError("yield_bump must be finite and > 0.")
     price = bond_price(face_value, coupon_rate, yield_to_maturity, maturity_years, frequency)
     macaulay = macaulay_duration(
         face_value, coupon_rate, yield_to_maturity, maturity_years, frequency

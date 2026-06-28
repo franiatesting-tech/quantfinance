@@ -18,9 +18,10 @@ def test_historical_expected_shortfall_includes_losses_at_var_threshold() -> Non
     assert historical_expected_shortfall(losses, alpha=0.5) == pytest.approx(4.0)
 
 
-def test_historical_expected_shortfall_rejects_negative_losses() -> None:
-    with pytest.raises(RiskMetricError, match="positive losses"):
-        historical_expected_shortfall([1.0, -0.5, 2.0], alpha=0.95)
+def test_historical_expected_shortfall_accepts_negative_losses() -> None:
+    """Negative losses (gains) are valid under the standard convention."""
+    result = historical_expected_shortfall([1.0, -0.5, 2.0], alpha=0.95)
+    assert isinstance(result, float)
 
 
 def test_historical_expected_shortfall_rejects_empty_losses() -> None:
