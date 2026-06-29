@@ -169,18 +169,13 @@ def _render_stock_research_terminal(
         st.error("Selected report has no per-stock payload.")
         return
 
-    stock_cols = st.columns([1, 1, 2])
-    asset_id = stock_cols[0].selectbox("Select stock", sorted(stocks))
+    stock_cols = st.columns([1, 2.4])
+    asset_id = stock_cols[0].selectbox("Ticker", sorted(stocks))
     stock = stocks[asset_id]
-    stock_cols[1].selectbox(
-        "Report view",
-        ["Overview", "Data", "Risk", "Monte Carlo", "ML", "Backtesting", "Options", "Report"],
-        index=0,
-        key="report_view_selector",
-    )
-    stock_cols[2].caption(
-        "This is not investment advice. It is a quantitative research signal based on "
-        "historical data, assumptions, and model limitations."
+    stock_cols[1].markdown(
+        "<div class='ticker-note'>Single-ticker research dossier: data, risk, ML, "
+        "options and downloadable PDF. Research-only, no trading action.</div>",
+        unsafe_allow_html=True,
     )
 
     metrics = _mapping(stock.get("metrics"))
@@ -207,60 +202,66 @@ def _render_stock_research_terminal(
         ],
     )
 
-    tabs = st.tabs(
-        ["Overview", "Data", "Risk", "Monte Carlo", "ML", "Backtesting", "Options", "Report"]
+    st.markdown("### 1. Research Thread")
+    st.write(
+        "El dossier conecta el hilo completo del estudio: datos OHLCV, transformacion a "
+        "retornos, performance, riesgo, CAPM, VaR/ES, Monte Carlo, ML walk-forward, "
+        "backtesting educativo y Black-Scholes-Merton. La clasificacion final resume "
+        "evidencia historica bajo limites explicitos, no una instruccion operativa."
     )
-    with tabs[0]:
-        st.markdown("### What was studied?")
-        st.write(
-            "Historical OHLCV data, return construction, performance, risk, CAPM, VaR/ES, "
-            "Monte Carlo, walk-forward ML diagnostics, strategy backtests and options analytics."
-        )
-        st.markdown("### How to interpret this?")
-        st.write(
-            "Read the signal as a research summary under historical assumptions. Favorable does "
-            "not mean action; caution does not mean a forecast."
-        )
-        st.plotly_chart(
-            _stock_line_figure(stock, "price_series", "price", asset_id, "Price history"),
-            use_container_width=True,
-        )
-        st.plotly_chart(
-            _stock_line_figure(
-                stock, "cumulative_returns", "cumulative_return", asset_id, "Cumulative returns"
-            ),
-            use_container_width=True,
-        )
-    with tabs[1]:
-        st.markdown("### Data & Quality")
-        st.dataframe(_safe_df(pd, [_mapping(stock.get("data_used"))]), use_container_width=True)
-        st.dataframe(_safe_df(pd, [_mapping(stock.get("data_quality"))]), use_container_width=True)
-        st.plotly_chart(
-            _stock_line_figure(stock, "volume_series", "volume", asset_id, "Volume"),
-            use_container_width=True,
-        )
-    with tabs[2]:
-        st.markdown("### Model limits")
-        st.warning("VaR and ES are model estimates. They do not describe every possible loss.")
-        st.plotly_chart(
-            _stock_line_figure(stock, "drawdown_series", "drawdown", asset_id, "Drawdown"),
-            use_container_width=True,
-        )
-        st.plotly_chart(_stock_returns_histogram(stock), use_container_width=True)
-        st.plotly_chart(_stock_var_figure(stock), use_container_width=True)
-    with tabs[3]:
-        st.plotly_chart(_stock_mc_paths_figure(stock), use_container_width=True)
-        st.plotly_chart(_stock_mc_fan_figure(stock), use_container_width=True)
-    with tabs[4]:
-        st.markdown("### ML Forecasting Assessment")
-        st.dataframe(_safe_df(pd, [_ml_summary_row(ml)]), use_container_width=True, hide_index=True)
-        st.plotly_chart(_stock_ml_prediction_figure(stock), use_container_width=True)
-    with tabs[5]:
-        st.plotly_chart(_stock_backtest_figure(stock), use_container_width=True)
-    with tabs[6]:
-        st.plotly_chart(_stock_options_payoff_figure(stock), use_container_width=True)
-    with tabs[7]:
-        _render_stock_report_links(st, snapshot, asset_id)
+    action_text = signal.get("suggested_research_action", "Review model assumptions.")
+    st.info(f"Research-only action classification: {action_text}")
+
+    chart_cols = st.columns(2)
+    chart_cols[0].plotly_chart(
+        _stock_line_figure(stock, "price_series", "price", asset_id, "Price history"),
+        use_container_width=True,
+    )
+    chart_cols[1].plotly_chart(
+        _stock_line_figure(
+            stock, "cumulative_returns", "cumulative_return", asset_id, "Cumulative returns"
+        ),
+        use_container_width=True,
+    )
+
+    st.markdown("### 2. Data Quality & Market Risk")
+    data_cols = st.columns([1, 1, 1.4])
+    data_cols[0].dataframe(
+        _safe_df(pd, [_mapping(stock.get("data_used"))]), use_container_width=True
+    )
+    data_cols[1].dataframe(
+        _safe_df(pd, [_mapping(stock.get("data_quality"))]), use_container_width=True
+    )
+    data_cols[2].plotly_chart(
+        _stock_line_figure(stock, "drawdown_series", "drawdown", asset_id, "Drawdown"),
+        use_container_width=True,
+    )
+
+    risk_cols = st.columns(2)
+    risk_cols[0].plotly_chart(_stock_returns_histogram(stock), use_container_width=True)
+    risk_cols[1].plotly_chart(_stock_var_figure(stock), use_container_width=True)
+
+    st.markdown("### 3. ML, Monte Carlo & Backtest")
+    ml_cols = st.columns([1, 1])
+    ml_cols[0].dataframe(
+        _safe_df(pd, [_ml_summary_row(ml)]), use_container_width=True, hide_index=True
+    )
+    ml_cols[1].plotly_chart(_stock_ml_prediction_figure(stock), use_container_width=True)
+    mc_cols = st.columns(2)
+    mc_cols[0].plotly_chart(_stock_mc_fan_figure(stock), use_container_width=True)
+    mc_cols[1].plotly_chart(_stock_backtest_figure(stock), use_container_width=True)
+
+    st.markdown("### 4. Black-Scholes-Merton Options Study")
+    opt_cols = st.columns([1.4, 1])
+    opt_cols[0].plotly_chart(_stock_options_payoff_figure(stock), use_container_width=True)
+    opt_cols[1].dataframe(
+        _safe_df(pd, [_options_summary_row(_mapping(stock.get("options_theoretical_analytics")))]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("### 5. Academic PDF")
+    _render_stock_report_links(st, snapshot, asset_id)
 
     with st.expander("Developer diagnostics"):
         st.json({"ui_status": status, "selected_report": report_row, "selected_stock": asset_id})
@@ -418,6 +419,9 @@ def _stock_options_payoff_figure(stock: dict[str, Any]):  # noqa: ANN201
 
 
 def _render_stock_report_links(st, snapshot: dict[str, Any], asset_id: str) -> None:  # noqa: ANN001
+    import base64
+    from pathlib import Path
+
     reports = [
         row
         for row in snapshot["reports"]
@@ -436,11 +440,31 @@ def _render_stock_report_links(st, snapshot: dict[str, Any], asset_id: str) -> N
         return
     metadata = read_json_report(reports[-1]["path"])
     outputs = _mapping(metadata.get("outputs"))
-    st.markdown("### Academic report")
+    st.markdown("<div class='paper-card'>Academic report artifacts</div>", unsafe_allow_html=True)
     st.write(f"Markdown: `{outputs.get('md', 'not generated')}`")
     st.write(f"HTML: `{outputs.get('html', 'not generated')}`")
-    pdf_status = outputs.get("pdf", metadata.get("pdf_export", {}).get("status", "not generated"))
-    st.write(f"PDF: `{pdf_status}`")
+    pdf_path = outputs.get("pdf")
+    if not pdf_path:
+        st.warning(metadata.get("pdf_export", {}).get("status", "PDF not generated"))
+        return
+    pdf_file = Path(str(pdf_path))
+    if not pdf_file.exists():
+        st.warning(f"PDF metadata exists but file is missing: {pdf_file}")
+        return
+    pdf_bytes = pdf_file.read_bytes()
+    st.download_button(
+        "Download academic PDF",
+        data=pdf_bytes,
+        file_name=pdf_file.name,
+        mime="application/pdf",
+        use_container_width=True,
+    )
+    encoded = base64.b64encode(pdf_bytes).decode("ascii")
+    st.components.v1.html(
+        f'<iframe src="data:application/pdf;base64,{encoded}" width="100%" height="760" '
+        'style="border:1px solid rgba(214,179,90,0.35);border-radius:18px;"></iframe>',
+        height=790,
+    )
 
 
 def _ml_summary_row(ml: dict[str, Any]) -> dict[str, Any]:
@@ -452,6 +476,22 @@ def _ml_summary_row(ml: dict[str, Any]) -> dict[str, Any]:
         "baseline_directional_accuracy": ml.get("baseline_directional_accuracy"),
         "information_coefficient": ml.get("information_coefficient"),
         "strategy_sharpe": ml.get("strategy_sharpe"),
+    }
+
+
+def _options_summary_row(options: dict[str, Any]) -> dict[str, Any]:
+    call_diag = _mapping(options.get("call_diagnostics"))
+    return {
+        "spot": options.get("spot"),
+        "strike": options.get("strike"),
+        "volatility": options.get("volatility"),
+        "BSM call": options.get("black_scholes_call"),
+        "BSM put": options.get("black_scholes_put"),
+        "CRR call": options.get("binomial_call"),
+        "CRR put": options.get("binomial_put"),
+        "parity gap": options.get("put_call_parity_gap"),
+        "call time value": call_diag.get("time_value"),
+        "call breakeven": call_diag.get("breakeven_at_maturity"),
     }
 
 
@@ -1226,6 +1266,21 @@ def _inject_style(st) -> None:  # noqa: ANN001
             color: #071014;
             font-weight: 800;
             text-align: center;
+        }
+        .ticker-note {
+            border: 1px solid rgba(61, 214, 198, 0.30);
+            border-radius: 18px;
+            padding: 1rem 1.2rem;
+            background: rgba(7, 16, 20, 0.72);
+            color: #d9f6f2;
+            font-size: 0.98rem;
+        }
+        .paper-card {
+            border: 1px solid rgba(214, 179, 90, 0.35);
+            border-radius: 20px;
+            padding: 1rem 1.2rem;
+            background: rgba(12, 18, 24, 0.82);
+            margin: 0.75rem 0;
         }
         [data-testid="stMetric"] {
             background: rgba(12, 18, 24, 0.78);

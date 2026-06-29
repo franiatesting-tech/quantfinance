@@ -80,6 +80,64 @@ def black_scholes_greeks(
     }
 
 
+def black_scholes_diagnostics(
+    spot: float,
+    strike: float,
+    rate: float,
+    volatility: float,
+    maturity_years: float,
+    option_type: str = "call",
+    dividend_yield: float = 0.0,
+) -> dict[str, float | str]:
+    """Return explanatory Black-Scholes-Merton diagnostics for one option.
+
+    The diagnostics are intentionally model-based and educational. They expose the
+    mathematical inputs used by the paper: discount factors, d1/d2, moneyness,
+    intrinsic value, time value, forward price, and breakeven.
+    """
+
+    inputs = _option_inputs(spot, strike, volatility, maturity_years)
+    clean_type = _option_type(option_type)
+    d1, d2 = _d1_d2(*inputs, rate, dividend_yield)
+    price = black_scholes_price(
+        spot, strike, rate, volatility, maturity_years, clean_type, dividend_yield
+    )
+    forward = spot * math.exp((rate - dividend_yield) * maturity_years)
+    spot_dividend_discount = spot * math.exp(-dividend_yield * maturity_years)
+    strike_discount = strike * math.exp(-rate * maturity_years)
+    if clean_type == "call":
+        intrinsic = max(spot - strike, 0.0)
+        breakeven = strike + price
+    else:
+        intrinsic = max(strike - spot, 0.0)
+        breakeven = strike - price
+    time_value = max(price - intrinsic, 0.0)
+    normal = NormalDist()
+    return {
+        "option_type": clean_type,
+        "spot": float(spot),
+        "strike": float(strike),
+        "maturity_years": float(maturity_years),
+        "rate": float(rate),
+        "dividend_yield": float(dividend_yield),
+        "volatility": float(volatility),
+        "d1": float(d1),
+        "d2": float(d2),
+        "price": float(price),
+        "moneyness_spot_over_strike": float(spot / strike),
+        "forward_price": float(forward),
+        "spot_dividend_discounted": float(spot_dividend_discount),
+        "strike_discounted": float(strike_discount),
+        "intrinsic_value": float(intrinsic),
+        "time_value": float(time_value),
+        "breakeven_at_maturity": float(breakeven),
+        "risk_neutral_exercise_probability": float(
+            normal.cdf(d2) if clean_type == "call" else normal.cdf(-d2)
+        ),
+        "model_status": "PARAMETRIC_EDUCATIONAL_MODEL",
+    }
+
+
 def binomial_crr_price(
     spot: float,
     strike: float,
@@ -209,6 +267,7 @@ def option_scenario_table(
             {
                 "scenario": label,
                 "strike": float(strike),
+                "moneyness_spot_over_strike": float(spot / strike),
                 "black_scholes_call": call,
                 "black_scholes_put": put,
                 "binomial_call": binomial_crr_price(
@@ -219,6 +278,16 @@ def option_scenario_table(
                 ),
                 "call_delta": float(greeks["delta"]),
                 "call_gamma": float(greeks["gamma"]),
+                "call_vega": float(greeks["vega"]),
+                "call_theta_annual": float(greeks["theta_annual"]),
+                "call_rho": float(greeks["rho"]),
+                "call_intrinsic_value": max(float(spot - strike), 0.0),
+                "call_time_value": max(float(call - max(spot - strike, 0.0)), 0.0),
+                "put_intrinsic_value": max(float(strike - spot), 0.0),
+                "put_time_value": max(float(put - max(strike - spot, 0.0)), 0.0),
+                "put_call_parity_gap": put_call_parity_gap(
+                    call, put, spot, strike, rate, maturity_years, dividend_yield
+                ),
                 "model_status": "PARAMETRIC_EDUCATIONAL_MODEL",
             }
         )

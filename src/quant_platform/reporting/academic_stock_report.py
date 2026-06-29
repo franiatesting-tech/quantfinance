@@ -59,8 +59,14 @@ FORMULAS = [
     ("Historical VaR", "VaR_alpha(L) = quantile_alpha(L), L=-R_t"),
     ("Expected Shortfall", "ES_alpha = E[L | L >= VaR_alpha]"),
     ("GBM", "S_t = S_0 exp((mu - 0.5 sigma^2)t + sigma W_t)"),
+    ("Black-Scholes d1", "d1 = [ln(S/K) + (r - q + 0.5 sigma^2)T] / [sigma sqrt(T)]"),
+    ("Black-Scholes d2", "d2 = d1 - sigma sqrt(T)"),
     ("Black-Scholes call", "C = S exp(-qT) N(d1) - K exp(-rT) N(d2)"),
+    ("Black-Scholes put", "P = K exp(-rT) N(-d2) - S exp(-qT) N(-d1)"),
     ("Put-call parity", "C - P = S exp(-qT) - K exp(-rT)"),
+    ("Delta", "Delta_call = exp(-qT) N(d1)"),
+    ("Gamma", "Gamma = exp(-qT) phi(d1) / [S sigma sqrt(T)]"),
+    ("Vega", "Vega = S exp(-qT) phi(d1) sqrt(T)"),
     ("Ridge Regression", "beta_hat = argmin{||Y - X*beta||^2 + lambda*||beta||^2}"),
     ("Lasso Regression", "beta_hat = argmin{||Y - X*beta||^2 + lambda*||beta||_1}"),
     ("ElasticNet", "beta_hat = argmin{||Y - X*beta||^2 + l1*||beta||_1 + l2*||beta||^2}"),
@@ -158,7 +164,7 @@ def render_stock_report_html(report_model: dict[str, Any]) -> str:
     body = _markdown_to_basic_html(markdown)
     figure_paths = report_model.get("figure_paths", {})
     if figure_paths:
-        body = _embed_figures_inline(body, figure_paths, str(report_model.get("asset_id", "")))
+        body = _embed_figures_inline(body, figure_paths, report_model)
     asset_id = html.escape(str(report_model["asset_id"]))
     return f"""<!doctype html>
 <html lang="en">
@@ -166,23 +172,31 @@ def render_stock_report_html(report_model: dict[str, Any]) -> str:
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{asset_id} Academic Quant Research Report</title>
-  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
   <style>
-    body {{ background: #081018; color: #e8ecef; font-family: Georgia, 'Times New Roman', serif; margin: 0; line-height: 1.6; }}
-    main {{ max-width: 1120px; margin: 0 auto; padding: 48px 28px 80px; }}
-    h1, h2, h3 {{ color: #f2d27a; font-family: Aptos, Segoe UI, sans-serif; }}
-    a {{ color: #3dd6c6; }}
-    code, pre {{ background: #121c25; color: #f2f0df; padding: 2px 6px; border-radius: 6px; font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace; }}
-    table {{ border-collapse: collapse; width: 100%; margin: 18px 0; }}
-    th, td {{ border: 1px solid #2c3a46; padding: 8px 10px; vertical-align: top; }}
-    th {{ background: #142231; color: #f2d27a; }}
-    .warning {{ border: 1px solid #d66a4a; padding: 14px; border-radius: 12px; background: rgba(214,106,74,0.12); }}
-    .figure-box {{ background: #0d1520; border: 1px solid #2c3a46; border-radius: 12px; padding: 12px; margin: 18px 0; }}
-    .figure-box .plotly-graph-div {{ height: 450px !important; }}
-    .mjx-chtml {{ font-size: 110% !important; }}
+    @page {{ size: A4; margin: 18mm 16mm 20mm; }}
+    body {{ background: #f7f2e8; color: #111820; font-family: Georgia, 'Times New Roman', serif; margin: 0; line-height: 1.55; }}
+    main {{ max-width: 1060px; margin: 0 auto; padding: 38px 26px 72px; }}
+    h1 {{ color: #101820; font-family: Aptos, Segoe UI, sans-serif; font-size: 34px; letter-spacing: -0.03em; border-bottom: 4px solid #b58b38; padding-bottom: 12px; }}
+    h2 {{ color: #101820; font-family: Aptos, Segoe UI, sans-serif; font-size: 23px; margin-top: 34px; break-after: avoid; }}
+    h3 {{ color: #5a3d0c; font-family: Aptos, Segoe UI, sans-serif; font-size: 16px; margin-top: 18px; break-after: avoid; }}
+    h2:nth-of-type(n+4) {{ break-before: page; }}
+    p {{ text-align: justify; }}
+    a {{ color: #0f766e; }}
+    code, pre {{ background: #efe4cf; color: #111820; padding: 2px 6px; border-radius: 6px; font-family: 'Cascadia Code', 'Consolas', monospace; }}
+    table {{ border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 12px; break-inside: avoid; }}
+    th, td {{ border: 1px solid #c9b894; padding: 7px 9px; vertical-align: top; }}
+    th {{ background: #efe4cf; color: #111820; font-family: Aptos, Segoe UI, sans-serif; }}
+    .math-block {{ display: block; margin: 8px 0 10px; padding: 10px 12px; border-left: 4px solid #b58b38; background: #fffaf0; color: #111820; font-family: 'Cambria Math', 'Times New Roman', serif; font-size: 17px; letter-spacing: 0.01em; break-inside: avoid; }}
+    .math-inline {{ font-family: 'Cambria Math', 'Times New Roman', serif; color: #111820; }}
+    .figure-box {{ background: #fffaf0; border: 1px solid #c9b894; border-radius: 10px; padding: 12px 14px; margin: 16px 0 20px; break-inside: avoid; }}
+    .figure-title {{ color: #101820; margin: 0 0 6px; font-family: Aptos, Segoe UI, sans-serif; font-size: 15px; }}
+    .figure-caption {{ color: #4a5563; font-size: 12px; margin: 8px 0 0; }}
+    .static-chart {{ width: 100%; height: 260px; background: #fffdf8; border-radius: 8px; }}
+    .research-action {{ border: 1px solid #b58b38; background: #fff6df; padding: 12px 14px; border-radius: 10px; margin: 14px 0; break-inside: avoid; }}
+    .disclaimer {{ border: 1px solid #9f1239; color: #7f1d1d; background: #fff1f2; padding: 10px 12px; border-radius: 10px; font-weight: 700; }}
   </style>
 </head>
-<body><main>{body}</main></body>
+<body><main><div class="disclaimer">Research-only. This is not investment advice. No broker, no order routing, no position sizing.</div>{body}</main></body>
 </html>
 """
 
@@ -305,6 +319,12 @@ def _render_section(title: str, report_model: dict[str, Any]) -> list[str]:
         lines.extend([_data_table(stock), ""])
     if section_key in {"Performance Metrics", "CAPM Metrics", "Quantitative Decision Signal"}:
         lines.extend([_metrics_table(metrics), ""])
+    if section_key == "ML Forecasting Assessment":
+        lines.extend([_ml_table(stock), ""])
+    if section_key == "Options Analytics":
+        lines.extend([_options_table(stock), ""])
+    if section_key in {"Quantitative Decision Signal", "Stock-Specific Conclusions"}:
+        lines.extend([_research_action_table(conclusions), ""])
     if section_key == "Bibliography & Method Traceability":
         lines.extend([_bibliography_table(report_model), ""])
     if section_key == "Mathematical Appendix":
@@ -500,7 +520,7 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "Black-Scholes: C = S*N(d1) - K*e^{-rT}*N(d2). P = C - S + K*e^{-rT}. "
             "Griegas: dC/dS, d2C/dS2, dC/dsigma, dC/dt, dC/dr. "
             "Strike ATM, madurez 30 dias, volatilidad historica, tipo libre de riesgo.",
-            FORMULAS[13:15],
+            FORMULAS[13:20],
             ["options_payoff", "greeks"],
             "PARAMETRIC_EDUCATIONAL_MODEL: sin option chain, smile, dividendos reales ni microestructura.",
         ),
@@ -649,10 +669,62 @@ def _metrics_table(metrics: dict[str, Any]) -> str:
     return _key_value_table(selected)
 
 
+def _ml_table(stock: dict[str, Any]) -> str:
+    ml = _mapping(stock.get("ml_forecasting"))
+    garch = _mapping(ml.get("garch_forecast"))
+    selected = {
+        "validation": ml.get("validation"),
+        "models_evaluated": ", ".join(str(item) for item in ml.get("models_evaluated", [])),
+        "status": ml.get("status"),
+        "RMSE": _num(ml.get("rmse")),
+        "MAE": _num(ml.get("mae")),
+        "OOS R^2": _num(ml.get("oos_r_squared")),
+        "Information coefficient": _num(ml.get("information_coefficient")),
+        "Directional accuracy": _pct(ml.get("directional_accuracy")),
+        "Naive directional accuracy": _pct(ml.get("baseline_directional_accuracy")),
+        "GARCH annual volatility": _pct(garch.get("conditional_volatility_annual")),
+        "GARCH persistence": _num(garch.get("persistence")),
+    }
+    return _key_value_table(selected)
+
+
+def _options_table(stock: dict[str, Any]) -> str:
+    options = _mapping(stock.get("options_theoretical_analytics"))
+    call_diag = _mapping(options.get("call_diagnostics"))
+    selected = {
+        "spot": _num(options.get("spot")),
+        "strike ATM": _num(options.get("strike")),
+        "historical volatility": _pct(options.get("volatility")),
+        "BSM call": _num(options.get("black_scholes_call")),
+        "BSM put": _num(options.get("black_scholes_put")),
+        "CRR call": _num(options.get("binomial_call")),
+        "CRR put": _num(options.get("binomial_put")),
+        "put-call parity gap": _num(options.get("put_call_parity_gap")),
+        "call intrinsic value": _num(call_diag.get("intrinsic_value")),
+        "call time value": _num(call_diag.get("time_value")),
+        "call breakeven": _num(call_diag.get("breakeven_at_maturity")),
+        "risk-neutral exercise probability": _pct(
+            call_diag.get("risk_neutral_exercise_probability")
+        ),
+    }
+    return _key_value_table(selected)
+
+
+def _research_action_table(conclusions: dict[str, Any]) -> str:
+    return _key_value_table(
+        {
+            "Classification": conclusions.get("Research action classification", "N/A"),
+            "Parameters": conclusions.get("Research action parameters", "N/A"),
+            "Limits": conclusions.get("Research action limits", "N/A"),
+            "Compliance": "Research-only; no operational direction, no sizing, no personalized advice.",
+        }
+    )
+
+
 def _formula_table() -> str:
     rows = ["| Formula | Expression |", "| --- | --- |"]
     for name, formula in FORMULAS:
-        rows.append(f"| {name} | $$ {formula} $$ |")
+        rows.append(f"| {name} | $$ {formula.replace('|', ' given ')} $$ |")
     return "\n".join(rows)
 
 
@@ -695,12 +767,57 @@ def _methods_review_summary() -> dict[str, Any]:
 
 def _inline_markdown(text: str) -> str:
     """Convert inline markdown syntax (bold, code, links, LaTeX math) to HTML."""
-    s = html.escape(text)
+    math_blocks: list[str] = []
+
+    def stash_math(match: re.Match[str]) -> str:
+        math_blocks.append(_math_html(match.group(1)))
+        return f"@@MATH_BLOCK_{len(math_blocks) - 1}@@"
+
+    raw = re.sub(r'\$\$(.+?)\$\$', stash_math, text)
+    s = html.escape(raw)
     s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
     s = re.sub(r'`([^`]+)`', r'<code>\1</code>', s)
     s = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', s)
-    s = re.sub(r'\$\$(.+?)\$\$', r'\\[\1\\]', s)
+    for index, block in enumerate(math_blocks):
+        s = s.replace(f"@@MATH_BLOCK_{index}@@", block)
     return s
+
+
+def _math_html(formula: str) -> str:
+    """Render a compact LaTeX-like formula as static HTML for WeasyPrint."""
+
+    s = html.escape(str(formula))
+    replacements = {
+        "sigma": "σ",
+        "alpha": "α",
+        "beta": "β",
+        "lambda": "λ",
+        "omega": "ω",
+        "eps": "ε",
+        "mu": "μ",
+        "phi": "φ",
+        "sqrt": "√",
+        "sum": "∑",
+        "prod": "∏",
+        "argmin": "arg min",
+        "mean": "mean",
+        "std": "std",
+        "quantile": "quantile",
+        "exp": "exp",
+        "ln": "ln",
+        " &gt;= ": " ≥ ",
+        " &lt;= ": " ≤ ",
+        "&gt;=": "≥",
+        "&lt;=": "≤",
+    }
+    for old, new in replacements.items():
+        s = s.replace(old, new)
+    s = re.sub(r'([A-Za-zΑ-ω]+)_\{([^}]+)\}', r'\1<sub>\2</sub>', s)
+    s = re.sub(r'([A-Za-zΑ-ω]+)_([A-Za-z0-9]+)', r'\1<sub>\2</sub>', s)
+    s = re.sub(r'\^\{([^}]+)\}', r'<sup>\1</sup>', s)
+    s = re.sub(r'\^([A-Za-z0-9]+)', r'<sup>\1</sup>', s)
+    s = s.replace("*", " · ")
+    return f'<span class="math-block">{s}</span>'
 
 
 def _markdown_to_basic_html(markdown: str) -> str:
@@ -766,39 +883,255 @@ def _markdown_to_basic_html(markdown: str) -> str:
 
 
 def _embed_figures_inline(
-    body: str, figure_paths: dict[str, str], asset_id: str
+    body: str, figure_paths: dict[str, str], report_model: dict[str, Any]
 ) -> str:
-    """Replace figure text links with inline embedded Plotly figures."""
+    """Replace figure text links with PDF-safe static SVG figures."""
+
+    stock = _mapping(report_model.get("stock"))
     for name, fpath in figure_paths.items():
         fpath_obj = Path(fpath)
-        if not fpath_obj.exists():
-            continue
-        raw = fpath_obj.read_text(encoding="utf-8")
-        div_match = re.search(
-            r'(<div\s+id="[^"]*"\s+class="plotly-graph-div"[^>]*>)\s*</div>',
-            raw,
-        )
-        script_match = re.search(
-            r'(<script>\s*window\.PLOTLYENV.*?Plotly\.newPlot\(\s*"[^"]*".*?</script>)',
-            raw,
-            re.DOTALL,
-        )
-        if not div_match or not script_match:
-            continue
-        plotly_div = div_match.group(1) + "</div>"
-        plotly_script = script_match.group(1)
-        figure_html = (
-            f'<div class="figure-box">'
-            f'<h4 style="color:#f2d27a;margin:0 0 8px;">{html.escape(name.replace("_", " ").title())}</h4>'
-            f'{plotly_div}{plotly_script}</div>'
-        )
         filename = fpath_obj.name
+        figure_html = _static_figure_html(name, stock, filename)
         body = re.sub(
             rf'<li><a\s+href="[^"]*{re.escape(filename)}">[^<]*</a></li>',
             lambda _m: figure_html,
             body,
         )
     return body
+
+
+def _static_figure_html(name: str, stock: dict[str, Any], filename: str) -> str:
+    title = name.replace("_", " ").title()
+    svg = _static_svg_for(name, stock)
+    caption = _figure_caption(name)
+    return (
+        '<div class="figure-box">'
+        f'<h4 class="figure-title">{html.escape(title)}</h4>'
+        f'{svg}'
+        f'<p class="figure-caption">{html.escape(caption)} '
+        f'Archivo interactivo HTML: figures/{html.escape(filename)}.</p>'
+        '</div>'
+    )
+
+
+def _static_svg_for(name: str, stock: dict[str, Any]) -> str:
+    line_map = {
+        "price_history": ("price_series", "price"),
+        "volume": ("volume_series", "volume"),
+        "simple_returns": ("simple_returns", "return"),
+        "log_returns": ("log_returns", "log_return"),
+        "cumulative_returns": ("cumulative_returns", "cumulative_return"),
+        "drawdown": ("drawdown_series", "drawdown"),
+        "rolling_volatility": ("rolling_volatility", "rolling_volatility"),
+        "rolling_sharpe": ("rolling_sharpe", "rolling_sharpe"),
+        "rolling_beta": ("rolling_beta", "rolling_beta"),
+    }
+    if name in line_map:
+        series_key, value_key = line_map[name]
+        rows = _rows(stock.get(series_key))
+        return _line_svg([(name, [row.get(value_key) for row in rows])])
+    if name == "returns_distribution":
+        values = [row.get("return") for row in _rows(stock.get("simple_returns"))]
+        return _hist_svg(values)
+    if name == "var_comparison":
+        var_payload = _mapping(stock.get("var"))
+        bars = []
+        for model in ("historical", "parametric_normal", "monte_carlo"):
+            payload = _mapping(var_payload.get(model))
+            bars.append((f"{model} VaR", payload.get("var")))
+            bars.append((f"{model} ES", payload.get("expected_shortfall")))
+        return _bar_svg(bars)
+    if name == "monte_carlo_paths":
+        paths = _rows(_mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal")).get("paths_sample"))
+        groups = []
+        for path_id in sorted({row.get("path_id") for row in paths})[:8]:
+            rows = [row for row in paths if row.get("path_id") == path_id]
+            groups.append((f"path {path_id}", [row.get("value") for row in rows]))
+        return _line_svg(groups)
+    if name == "monte_carlo_percentiles":
+        rows = _rows(_mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal")).get("fan_chart"))
+        groups = [(p.upper(), [row.get(p) for row in rows]) for p in ("p5", "p25", "p50", "p75", "p95")]
+        return _line_svg(groups)
+    if name == "monte_carlo_terminal_distribution":
+        values = _mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal")).get("terminal_distribution", [])
+        return _hist_svg(values if isinstance(values, list) else [])
+    if name == "backtest_equity_curves":
+        groups = []
+        for label, payload in _mapping(stock.get("backtesting_results")).items():
+            rows = _rows(_mapping(payload).get("equity_curve"))
+            groups.append((str(label), [row.get("equity") for row in rows]))
+        return _line_svg(groups)
+    if name == "options_payoff":
+        options = _mapping(stock.get("options_theoretical_analytics"))
+        call_rows = _rows(options.get("payoff_profile"))
+        protective_rows = _rows(options.get("protective_put_payoff"))
+        return _line_svg(
+            [
+                ("call payoff", [row.get("payoff") for row in call_rows]),
+                ("protective put", [row.get("net_payoff") for row in protective_rows]),
+            ]
+        )
+    if name == "greeks":
+        greeks = _mapping(_mapping(stock.get("options_theoretical_analytics")).get("call_greeks"))
+        return _bar_svg([(key, greeks.get(key)) for key in ["delta", "gamma", "vega", "theta_annual", "rho"]])
+    if name == "ml_prediction_vs_actual":
+        rows = _rows(_mapping(stock.get("ml_forecasting")).get("prediction_rows"))
+        return _line_svg(
+            [
+                ("actual", [row.get("actual_return") for row in rows]),
+                ("predicted", [row.get("model_prediction") for row in rows]),
+            ]
+        )
+    if name == "ml_residuals":
+        rows = _rows(_mapping(stock.get("ml_forecasting")).get("prediction_rows"))
+        residuals = [
+            _float(row.get("actual_return")) - _float(row.get("model_prediction"))
+            for row in rows
+            if _float(row.get("actual_return")) is not None
+            and _float(row.get("model_prediction")) is not None
+        ]
+        return _line_svg([("residual", residuals)])
+    if name == "ml_model_comparison":
+        metrics = _mapping(_mapping(stock.get("ml_forecasting")).get("per_model_metrics"))
+        bars = [(label, _mapping(payload).get("directional_accuracy")) for label, payload in metrics.items()]
+        return _bar_svg(bars)
+    if name == "ml_feature_importance":
+        features = list(_mapping(stock.get("ml_forecasting")).get("features", []))[:12]
+        return _bar_svg([(str(feature).replace("feature_", ""), len(features) - idx) for idx, feature in enumerate(features)])
+    return _placeholder_svg("No static data available")
+
+
+def _line_svg(groups: list[tuple[str, list[Any]]]) -> str:
+    colors = ["#0f766e", "#b45309", "#9f1239", "#1d4ed8", "#4d7c0f", "#7c3aed"]
+    clean_groups = []
+    all_values = []
+    for label, values in groups:
+        clean = [_float(value) for value in values]
+        clean = [value for value in clean if value is not None]
+        if clean:
+            clean_groups.append((label, clean))
+            all_values.extend(clean)
+    if not all_values:
+        return _placeholder_svg("No data")
+    width, height, pad = 900, 260, 34
+    lo, hi = min(all_values), max(all_values)
+    if lo == hi:
+        lo -= 1.0
+        hi += 1.0
+    parts = [_svg_shell(width, height)]
+    for idx, (label, values) in enumerate(clean_groups):
+        color = colors[idx % len(colors)]
+        denom = max(len(values) - 1, 1)
+        points = []
+        for pos, value in enumerate(values):
+            x = pad + (width - 2 * pad) * pos / denom
+            y = height - pad - (height - 2 * pad) * (value - lo) / (hi - lo)
+            points.append(f"{x:.1f},{y:.1f}")
+        parts.append(f'<polyline fill="none" stroke="{color}" stroke-width="2" points="{" ".join(points)}" />')
+        parts.append(f'<text x="{pad + idx * 135}" y="20" fill="{color}" font-size="12">{html.escape(str(label))}</text>')
+    parts.append(_svg_axes(width, height, pad, lo, hi))
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _bar_svg(bars: list[tuple[str, Any]]) -> str:
+    clean = [(label, _float(value)) for label, value in bars]
+    clean = [(label, value) for label, value in clean if value is not None]
+    if not clean:
+        return _placeholder_svg("No data")
+    width, height, pad = 900, 260, 34
+    values = [value for _, value in clean]
+    lo = min(0.0, min(values))
+    hi = max(values)
+    if lo == hi:
+        hi = lo + 1.0
+    bar_width = max(8, (width - 2 * pad) / len(clean) * 0.68)
+    parts = [_svg_shell(width, height)]
+    zero_y = height - pad - (height - 2 * pad) * (0 - lo) / (hi - lo)
+    for idx, (label, value) in enumerate(clean):
+        x = pad + idx * (width - 2 * pad) / len(clean) + 4
+        y = height - pad - (height - 2 * pad) * (value - lo) / (hi - lo)
+        top = min(y, zero_y)
+        bar_h = max(abs(zero_y - y), 1.0)
+        parts.append(f'<rect x="{x:.1f}" y="{top:.1f}" width="{bar_width:.1f}" height="{bar_h:.1f}" fill="#0f766e" opacity="0.85" />')
+        parts.append(f'<text transform="translate({x:.1f},{height - 9}) rotate(-35)" fill="#374151" font-size="9">{html.escape(str(label)[:20])}</text>')
+    parts.append(_svg_axes(width, height, pad, lo, hi))
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _hist_svg(values: list[Any]) -> str:
+    clean = [_float(value) for value in values]
+    clean = [value for value in clean if value is not None]
+    if not clean:
+        return _placeholder_svg("No data")
+    bins = 24
+    lo, hi = min(clean), max(clean)
+    if lo == hi:
+        lo -= 1.0
+        hi += 1.0
+    counts = [0] * bins
+    for value in clean:
+        pos = min(int((value - lo) / (hi - lo) * bins), bins - 1)
+        counts[pos] += 1
+    return _bar_svg([(str(idx + 1), count) for idx, count in enumerate(counts)])
+
+
+def _placeholder_svg(text: str) -> str:
+    return (
+        '<svg class="static-chart" viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg">'
+        '<rect x="0" y="0" width="900" height="260" fill="#fffdf8" />'
+        f'<text x="450" y="132" text-anchor="middle" fill="#6b7280" font-size="18">{html.escape(text)}</text>'
+        '</svg>'
+    )
+
+
+def _svg_shell(width: int, height: int) -> str:
+    return (
+        f'<svg class="static-chart" viewBox="0 0 {width} {height}" '
+        'xmlns="http://www.w3.org/2000/svg">'
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#fffdf8" />'
+    )
+
+
+def _svg_axes(width: int, height: int, pad: int, lo: float, hi: float) -> str:
+    return (
+        f'<line x1="{pad}" y1="{height-pad}" x2="{width-pad}" y2="{height-pad}" stroke="#9ca3af" stroke-width="1" />'
+        f'<line x1="{pad}" y1="{pad}" x2="{pad}" y2="{height-pad}" stroke="#9ca3af" stroke-width="1" />'
+        f'<text x="{pad}" y="{pad-8}" fill="#6b7280" font-size="10">max {hi:.4g}</text>'
+        f'<text x="{pad}" y="{height-pad+16}" fill="#6b7280" font-size="10">min {lo:.4g}</text>'
+    )
+
+
+def _figure_caption(name: str) -> str:
+    captions = {
+        "price_history": "Precio de cierre ajustado: muestra tendencia, volatilidad y cambios de regimen.",
+        "volume": "Volumen diario: aproxima liquidez y actividad de mercado.",
+        "simple_returns": "Retornos simples diarios R_t = P_t/P_{t-1}-1.",
+        "log_returns": "Retornos logaritmicos r_t = ln(P_t/P_{t-1}), usados en modelos continuos.",
+        "cumulative_returns": "Crecimiento compuesto de capital: traduce retornos diarios a riqueza acumulada.",
+        "drawdown": "Caida desde maximos: mide perdida historica real antes de recuperacion.",
+        "rolling_volatility": "Volatilidad movil anualizada: identifica periodos de turbulencia y calma.",
+        "rolling_sharpe": "Sharpe movil: eficiencia historica riesgo-retorno por ventana.",
+        "rolling_beta": "Beta movil frente al benchmark: sensibilidad al mercado y estabilidad del riesgo sistematico.",
+        "returns_distribution": "Distribucion empirica de retornos: asimetria y colas gruesas.",
+        "var_comparison": "VaR y Expected Shortfall: umbral y perdida media de cola.",
+        "monte_carlo_paths": "Trayectorias simuladas: escenarios posibles bajo supuestos del modelo.",
+        "monte_carlo_percentiles": "Fan chart: percentiles P5-P95 de la simulacion.",
+        "monte_carlo_terminal_distribution": "Distribucion terminal: resultados simulados al final del horizonte.",
+        "backtest_equity_curves": "Curvas de capital ficticio: backtest historico sin ejecucion real.",
+        "options_payoff": "Payoff teorico de opciones: convexidad y proteccion conceptual.",
+        "greeks": "Griegas BSM: sensibilidad a precio, volatilidad, tiempo y tipo.",
+        "ml_prediction_vs_actual": "Prediccion walk-forward vs retorno realizado.",
+        "ml_residuals": "Residuos ML: error de prediccion real menos estimado.",
+        "ml_model_comparison": "Comparacion de modelos ML segun metricas out-of-sample.",
+        "ml_feature_importance": "Importancia de variables: factores usados por el modelo predictivo.",
+    }
+    return captions.get(name, "Figura academica generada para el informe.")
+
+
+def _rows(value: object) -> list[dict[str, Any]]:
+    return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
 
 
 def _mapping(value: object) -> dict[str, Any]:

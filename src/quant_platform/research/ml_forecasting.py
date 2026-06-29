@@ -55,6 +55,7 @@ def run_walk_forward_forecast(
     min_train_size: int = 252,
     horizon_days: int = 1,
     max_test_observations: int = 252,
+    refit_frequency_days: int = 5,
     periods_per_year: int = 252,
 ) -> dict[str, Any]:
     """Run leakage-aware walk-forward forecasting with multiple ML models.
@@ -85,6 +86,8 @@ def run_walk_forward_forecast(
         raise MLForecastingError("horizon_days must be in [1, 21].")
     if max_test_observations < 10:
         raise MLForecastingError("max_test_observations must be >= 10.")
+    if refit_frequency_days < 1 or refit_frequency_days > 63:
+        raise MLForecastingError("refit_frequency_days must be in [1, 63].")
 
     clean_prices = _as_price_series(prices)
     returns = daily_simple_returns(clean_prices)
@@ -105,6 +108,8 @@ def run_walk_forward_forecast(
         "ridge": [], "lasso": [], "elasticnet": [],
         "gradient_boosting": [], "random_forest": [],
     }
+    model_cache: dict[str, Any] | None = None
+    last_refit_pos = -10_000
 
     for test_pos in range(first_test_pos, len(frame)):
         purge = horizon_days
@@ -122,11 +127,13 @@ def run_walk_forward_forecast(
         }
 
         if SKLEARN_AVAILABLE:
-            fold_preds.update(
-                _sklearn_fold_predictions(train, test, feature_columns)
-            )
+            if model_cache is None or test_pos - last_refit_pos >= refit_frequency_days:
+                model_cache = _fit_sklearn_models(train, feature_columns)
+                last_refit_pos = test_pos
+            if model_cache:
+                fold_preds.update(_predict_sklearn_models(model_cache, test, feature_columns))
 
-        best_model, best_pred = _select_best_model(fold_preds, train, feature_columns)
+        best_model, best_pred = _select_best_model(fold_preds)
 
         rows.append({
             "timestamp": pd.Timestamp(test.name).isoformat(),
@@ -184,6 +191,7 @@ def run_walk_forward_forecast(
         "horizon_days": int(horizon_days),
         "train_min_observations": int(min_train_size),
         "max_test_observations": int(max_test_observations),
+        "refit_frequency_days": int(refit_frequency_days),
         "test_observations": int(len(result)),
         "purge_gap": int(horizon_days),
         "features": feature_columns,
@@ -294,42 +302,20 @@ def _feature_frame(
 
 def _select_best_model(
     fold_preds: dict[str, float],
-    train: pd.DataFrame,
-    feature_columns: list[str],
 ) -> tuple[str, float]:
-    """Select best model for this fold based on in-sample performance.
+    """Select the primary prediction without training any model twice.
 
-    In walk-forward, we use the most recent training window performance
-    to select among candidate models. This is the "adaptive ensemble"
-    approach of Pagliaro (2026).
+    Every candidate prediction was already produced by a leakage-aware per-fold
+    fit. The selected forecast prioritizes tree boosting, then random forests,
+    then regularized linear models. Per-model diagnostics are still reported
+    separately, so the paper can compare all models out-of-sample.
     """
     if not SKLEARN_AVAILABLE:
         return "historical_mean_baseline", fold_preds.get("historical_mean", 0.0)
-
-    candidate_models = ["ridge", "lasso", "elasticnet", "gradient_boosting", "random_forest"]
-    best_name = "historical_mean_baseline"
-    best_pred = fold_preds.get("historical_mean", 0.0)
-    best_ic = -np.inf
-
-    train_actuals = train["target_next_return"].values
-    for model_name in candidate_models:
-        pred_key = model_name
-        if pred_key not in fold_preds:
-            continue
-        preds = _get_model_in_sample_predictions(train, feature_columns, model_name)
-        if preds is None:
-            continue
-        if len(preds) < 10 or np.std(preds) < 1e-10:
-            continue
-        ic = np.corrcoef(preds, train_actuals)[0, 1]
-        if np.isnan(ic):
-            ic = 0.0
-        if ic > best_ic:
-            best_ic = ic
-            best_name = model_name
-            best_pred = fold_preds[pred_key]
-
-    return best_name, best_pred
+    for model_name in ("gradient_boosting", "random_forest", "elasticnet", "ridge", "lasso"):
+        if model_name in fold_preds:
+            return model_name, fold_preds[model_name]
+    return "historical_mean_baseline", fold_preds.get("historical_mean", 0.0)
 
 
 def _get_model_in_sample_predictions(
@@ -356,11 +342,11 @@ def _get_model_in_sample_predictions(
         "lasso": Lasso(alpha=1e-3, max_iter=5000),
         "elasticnet": ElasticNet(alpha=1e-3, l1_ratio=0.5, max_iter=5000),
         "gradient_boosting": GradientBoostingRegressor(
-            n_estimators=100, max_depth=3, learning_rate=0.1,
+            n_estimators=60, max_depth=3, learning_rate=0.08,
             subsample=0.8, random_state=42,
         ),
         "random_forest": RandomForestRegressor(
-            n_estimators=100, max_depth=5, random_state=42, n_jobs=-1,
+            n_estimators=60, max_depth=5, random_state=42, n_jobs=-1,
         ),
     }
 
@@ -384,44 +370,68 @@ def _sklearn_fold_predictions(
 
     Per-fold StandardScaler fitting ensures no future data leakage.
     """
+    fitted = _fit_sklearn_models(train, feature_columns)
+    return _predict_sklearn_models(fitted, test, feature_columns) if fitted else {}
+
+
+def _fit_sklearn_models(
+    train: pd.DataFrame,
+    feature_columns: list[str],
+) -> dict[str, Any] | None:
+    """Fit sklearn models once for a walk-forward refit point."""
     try:
         from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
         from sklearn.linear_model import ElasticNet, Lasso, Ridge
         from sklearn.preprocessing import StandardScaler
     except Exception:
-        return {}
+        return None
 
     X_train = train[feature_columns].values
     y_train = train["target_next_return"].values
-    X_test = pd.DataFrame([test[feature_columns]], columns=feature_columns).values
-
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
     models = {
         "ridge": Ridge(alpha=1.0),
         "lasso": Lasso(alpha=1e-3, max_iter=5000),
         "elasticnet": ElasticNet(alpha=1e-3, l1_ratio=0.5, max_iter=5000),
         "gradient_boosting": GradientBoostingRegressor(
-            n_estimators=100, max_depth=3, learning_rate=0.1,
+            n_estimators=50, max_depth=3, learning_rate=0.08,
             subsample=0.8, random_state=42,
         ),
         "random_forest": RandomForestRegressor(
-            n_estimators=100, max_depth=5, random_state=42, n_jobs=-1,
+            n_estimators=40, max_depth=5, random_state=42, n_jobs=1,
         ),
     }
-
-    predictions = {}
+    fitted = {}
     for name, model in models.items():
         try:
             model.fit(X_train_scaled, y_train)
+            fitted[name] = model
+        except Exception:
+            continue
+    return {"scaler": scaler, "models": fitted} if fitted else None
+
+
+def _predict_sklearn_models(
+    fitted: dict[str, Any],
+    test: pd.Series,
+    feature_columns: list[str],
+) -> dict[str, float]:
+    """Predict one observation using the latest past-only sklearn model cache."""
+    scaler = fitted.get("scaler")
+    models = fitted.get("models", {})
+    if scaler is None or not isinstance(models, dict):
+        return {}
+    X_test = pd.DataFrame([test[feature_columns]], columns=feature_columns).values
+    X_test_scaled = scaler.transform(X_test)
+    predictions = {}
+    for name, model in models.items():
+        try:
             pred = float(model.predict(X_test_scaled)[0])
             if np.isfinite(pred):
                 predictions[name] = pred
         except Exception:
             continue
-
     return predictions
 
 

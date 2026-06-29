@@ -310,6 +310,80 @@ def interpret_ml(ml_results: dict[str, Any]) -> str:
     )
 
 
+def build_research_action_scenarios(
+    stock_report: dict[str, Any], decision_signal: dict[str, Any]
+) -> dict[str, str]:
+    """Build non-advisory research action scenarios for one stock.
+
+    These are not trade recommendations. They describe how an analyst could classify
+    the stock for further research under explicit historical-data limits.
+    """
+
+    metrics = _mapping(stock_report.get("metrics"))
+    var_results = _mapping(stock_report.get("var"))
+    historical_var = _mapping(var_results.get("historical"))
+    ml = _mapping(stock_report.get("ml_forecasting"))
+    normal_mc = _mapping(_mapping(stock_report.get("monte_carlo")).get("parametric_normal"))
+    options = _mapping(stock_report.get("options_theoretical_analytics"))
+    signal = str(decision_signal.get("signal", "INSUFFICIENT_DATA"))
+    confidence = str(decision_signal.get("confidence", "LOW"))
+    sharpe = _float(metrics.get("sharpe_ratio"))
+    drawdown = _float(metrics.get("max_drawdown"))
+    var_95 = _float(historical_var.get("var"))
+    es_95 = _float(historical_var.get("expected_shortfall"))
+    ml_da = _float(ml.get("directional_accuracy"))
+    ml_ic = _float(ml.get("information_coefficient"))
+    mc_median = _float(normal_mc.get("terminal_median"))
+    option_vol = _float(options.get("volatility"))
+
+    if signal == "FAVORABLE":
+        stance = (
+            "Clasificacion de investigacion favorable: el activo podria priorizarse "
+            "para un estudio long-only hipotetico, siempre sin convertirlo en orden real."
+        )
+    elif signal == "NEUTRAL":
+        stance = (
+            "Clasificacion de investigacion neutral: el activo deberia mantenerse como "
+            "caso de observacion y comparacion contra benchmark, no como tesis fuerte."
+        )
+    elif signal == "CAUTION":
+        stance = (
+            "Clasificacion de investigacion con cautela: el riesgo o la evidencia predictiva "
+            "no justifican elevar la conviccion del modelo sin nuevas pruebas."
+        )
+    elif signal == "UNFAVORABLE":
+        stance = (
+            "Clasificacion de investigacion desfavorable: el activo se priorizaria para "
+            "analisis de riesgo, drawdown y proteccion conceptual, no para exposicion direccional."
+        )
+    else:
+        stance = (
+            "Datos insuficientes: no debe formularse ninguna accion de investigacion mas alla "
+            "de ampliar muestra, revisar calidad de datos y repetir validacion."
+        )
+
+    parameters = (
+        "Parametros usados: "
+        f"Sharpe={_num(sharpe)}, max drawdown={_pct(drawdown)}, "
+        f"VaR95={_pct(var_95)}, ES95={_pct(es_95)}, "
+        f"ML directional accuracy={_pct(ml_da)}, ML IC={_num(ml_ic)}, "
+        f"Monte Carlo median={_pct(mc_median)}, BSM volatility={_pct(option_vol)}, "
+        f"signal={signal}, confidence={confidence}."
+    )
+    limits = (
+        "Limites de invalidez: no usar si cambia el proveedor de datos, si hay split/dividendo "
+        "no ajustado, si VaR/ES supera los limites configurados, si el modelo ML no supera "
+        "baseline naive, si el drawdown historico se amplifica, o si el regimen macro cambia. "
+        "No contiene sizing, orden, precio objetivo ni recomendacion personalizada."
+    )
+    return {
+        "classification": stance,
+        "parameters": parameters,
+        "limits": limits,
+        "compliance": DISCLAIMER,
+    }
+
+
 def build_stock_conclusions(stock_report: dict[str, Any], asset_id: str = "") -> dict[str, str]:
     """Build a complete deterministic conclusion set for one stock."""
 
@@ -322,6 +396,12 @@ def build_stock_conclusions(stock_report: dict[str, Any], asset_id: str = "") ->
         backtesting=_mapping(stock_report.get("backtesting_results")),
         data_quality_warnings=list(stock_report.get("warnings", [])),
     )
+    research_actions = build_research_action_scenarios(stock_report, decision_signal)
+    data_mode = str(_mapping(stock_report.get("data_used")).get("data_mode", "unknown"))
+    if data_mode in {"synthetic_fallback", "offline_synthetic"}:
+        data_note = "Los calculos usan datos sinteticos o fallback de demostracion. "
+    else:
+        data_note = "Los calculos usan datos historicos de proveedor con las limitaciones documentadas. "
     conclusions = {
         "Historical performance": interpret_performance(metrics),
         "Risk profile": interpret_risk(metrics),
@@ -340,19 +420,23 @@ def build_stock_conclusions(stock_report: dict[str, Any], asset_id: str = "") ->
             _mapping(stock_report.get("options_theoretical_analytics"))
         ),
         "Decision signal": research_signal_text(decision_signal),
+        "Research action classification": research_actions["classification"],
+        "Research action parameters": research_actions["parameters"],
+        "Research action limits": research_actions["limits"],
         "Overall research conclusion": (
             "CONCLUSION GLOBAL DEL ANALISIS: El informe ha examinado el comportamiento historico "
             "del activo desde multiples perspectivas (rendimiento, riesgo, CAPM, VaR, Monte Carlo, "
             "ML, backtesting y opciones). "
             f"RESEARCH-ONLY QUANTITATIVE DECISION SIGNAL: {research_signal_text(decision_signal)} "
-            "ADVERTENCIAS: (1) Todos los calculos usan datos sinteticos de demostracion. "
+            f"ACCION DE INVESTIGACION NO OPERATIVA: {research_actions['classification']} "
+            f"ADVERTENCIAS: (1) {data_note}"
             "(2) El performance pasado no implica resultados futuros. "
             "(3) Esta es una simulacion academica, no asesoramiento financiero personalizado."
         ),
         "What should not be concluded": (
             "No debe inferirse una accion operativa, una rentabilidad futura, una proteccion "
             "asegurada frente a perdidas ni una valoracion profesional de derivados. "
-            "Los datos mostrados son DEMO_SYNTHETIC_NOT_REAL_DATA. "
+            f"Data mode observado: {data_mode}. "
             "Cualquier analisis financiero real requiere: "
             "datos de mercado reales, analisis fundamental, contexto macroeconomico, "
             "perfil de riesgo personal, horizonte temporal, fiscalidad y costes de transaccion."

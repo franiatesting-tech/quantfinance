@@ -51,6 +51,7 @@ from quant_platform.research.monte_carlo import (
 )
 from quant_platform.research.options import (
     binomial_crr_price,
+    black_scholes_diagnostics,
     black_scholes_greeks,
     black_scholes_price,
     option_scenario_table,
@@ -430,6 +431,7 @@ def _stocks_section(
             benchmark_returns=benchmark_returns,
             min_train_size=756,
             max_test_observations=63,
+            refit_frequency_days=21,
         )
         decision_signal = build_research_decision_signal(
             metrics=metrics_summary,
@@ -791,6 +793,24 @@ def _options_section(
             "volatility": volatility,
             "black_scholes_call": call,
             "black_scholes_put": put,
+            "call_diagnostics": black_scholes_diagnostics(
+                spot,
+                strike,
+                risk_free_rate,
+                volatility,
+                maturity,
+                "call",
+                dividend_yield,
+            ),
+            "put_diagnostics": black_scholes_diagnostics(
+                spot,
+                strike,
+                risk_free_rate,
+                volatility,
+                maturity,
+                "put",
+                dividend_yield,
+            ),
             "binomial_call": binomial_crr_price(
                 spot, strike, risk_free_rate, volatility, maturity, steps, "call", dividend_yield
             ),
