@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -109,11 +110,15 @@ def register_dataset(
     data_path = dataset_dir / "data.csv"
     manifest_path = dataset_dir / "manifest.json"
     df.to_csv(data_path, index=False)
+    data_sha256 = _file_sha256(data_path)
 
     manifest: dict[str, object] = {
+        "manifest_schema_version": "dataset_manifest_v2",
         "metadata": _metadata_to_dict(metadata),
         "data_file": data_path.name,
         "data_format": "csv",
+        "data_sha256": data_sha256,
+        "hash_algorithm": "sha256",
         "row_count": int(len(df)),
         "columns": [str(column) for column in df.columns],
         "registered_at": datetime.now().astimezone().isoformat(),
@@ -148,6 +153,7 @@ def load_dataset(
         raise DatasetRegistryError(f"Unsupported data format: {registered.data_format}")
     if not registered.data_path.exists():
         raise DatasetRegistryError(f"Registered data file not found: {registered.data_path}")
+    _verify_registered_hash(registered.manifest_path, registered.data_path)
     df = pd.read_csv(registered.data_path)
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, format="mixed")
     df["available_at"] = pd.to_datetime(df["available_at"], utc=True, format="mixed")
@@ -162,3 +168,23 @@ def list_dataset_versions(registry_dir: str | Path, dataset_id: str) -> list[str
     if not dataset_root.exists():
         return []
     return sorted(path.name for path in dataset_root.iterdir() if path.is_dir())
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_registered_hash(manifest_path: Path, data_path: Path) -> None:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = manifest.get("data_sha256")
+    if expected is None:
+        return
+    observed = _file_sha256(data_path)
+    if observed != expected:
+        raise DatasetRegistryError(
+            "Registered data file hash mismatch: data.csv no longer matches manifest.json."
+        )

@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from quant_platform.research import ml_forecasting
 from quant_platform.research.ml_forecasting import run_walk_forward_forecast
 
 
@@ -21,7 +22,7 @@ def test_walk_forward_forecast_is_out_of_sample_and_reports_baseline_status() ->
     assert result["validation"] == "walk_forward_expanding_window_no_shuffle_no_leakage"
     assert result["status"] in {
         "MODEL_NOT_BETTER_THAN_NAIVE_BASELINE",
-        "MODEL_OUTPERFORMS_NAIVE_UNDER_TEST_ASSUMPTIONS",
+        "MODEL_EDGE_PASSED_STRICT_DIAGNOSTIC_GATES",
     }
     assert "rmse" in result
     assert "directional_accuracy" in result
@@ -48,7 +49,7 @@ def test_walk_forward_forecast_with_larger_dataset() -> None:
     assert result["test_observations"] > 0
     assert result["status"] in {
         "MODEL_NOT_BETTER_THAN_NAIVE_BASELINE",
-        "MODEL_OUTPERFORMS_NAIVE_UNDER_TEST_ASSUMPTIONS",
+        "MODEL_EDGE_PASSED_STRICT_DIAGNOSTIC_GATES",
     }
     assert result["purge_gap"] == 1
     assert "models_evaluated" in result
@@ -97,3 +98,26 @@ def test_garch_forecast_produced_when_enough_data() -> None:
         assert garch["alpha"] >= 0
         assert garch["beta"] >= 0
         assert garch["conditional_volatility_annual"] > 0
+
+
+def test_model_status_rejects_directional_edge_with_negative_oos_quality() -> None:
+    model = {
+        "rmse": 0.010,
+        "mae": 0.008,
+        "directional_accuracy": 0.56,
+        "oos_r_squared": -0.01,
+        "information_coefficient": -0.02,
+        "strategy_sharpe": 0.4,
+    }
+    naive = {
+        "rmse": 0.012,
+        "mae": 0.009,
+        "directional_accuracy": 0.50,
+    }
+
+    status, gates = ml_forecasting._model_status(model, naive)
+
+    assert status == "MODEL_NOT_BETTER_THAN_NAIVE_BASELINE"
+    assert gates["directional_accuracy_edge_ge_2pct"] is True
+    assert gates["oos_r_squared_positive"] is False
+    assert gates["information_coefficient_positive"] is False

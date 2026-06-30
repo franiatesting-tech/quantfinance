@@ -23,26 +23,27 @@ SECTION_TITLES = [
     "2. Executive Summary",
     "3. Plain-English Summary",
     "4. Research Question",
-    "5. Data & Provenance",
-    "6. Data Quality Review",
-    "7. Price Dynamics",
-    "8. Return Construction",
-    "9. Performance Metrics",
-    "10. CAPM Metrics",
-    "11. Value at Risk Analysis",
-    "12. Monte Carlo Simulation",
-    "13. ML Forecasting Assessment",
-    "14. Backtesting Analysis",
-    "15. Options Analytics",
-    "16. Comparison Against Benchmark",
-    "17. Quantitative Decision Signal",
-    "18. Statistical Interpretation",
-    "19. Model Performance Assessment",
-    "20. Stock-Specific Conclusions",
-    "21. Limitations",
-    "22. Reproducibility",
-    "23. Mathematical Appendix",
-    "24. Bibliography & Method Traceability",
+    "5. Literature-Driven Research Design",
+    "6. Data & Provenance",
+    "7. Data Quality Review",
+    "8. Price Dynamics",
+    "9. Return Construction",
+    "10. Performance Metrics",
+    "11. CAPM Metrics",
+    "12. Value at Risk Analysis",
+    "13. Monte Carlo Simulation",
+    "14. ML Forecasting Assessment",
+    "15. Backtesting Analysis",
+    "16. Options Analytics",
+    "17. Comparison Against Benchmark",
+    "18. Quantitative Decision Signal",
+    "19. Statistical Interpretation",
+    "20. Model Performance Assessment",
+    "21. Stock-Specific Conclusions",
+    "22. Limitations",
+    "23. Reproducibility",
+    "24. Mathematical Appendix",
+    "25. Bibliography & Method Traceability",
 ]
 
 FORMULAS = [
@@ -72,6 +73,11 @@ FORMULAS = [
     ("ElasticNet", "beta_hat = argmin{||Y - X*beta||^2 + l1*||beta||_1 + l2*||beta||^2}"),
     ("GARCH(1,1)", "sigma^2_t = omega + alpha*eps^2_{t-1} + beta*sigma^2_{t-1}"),
     ("OOS R-squared", "R^2_OOS = 1 - sum(R_t - hat{R}_t)^2 / sum(R_t - mean(R))^2"),
+    ("Information ratio", "IR = mean(R_i - R_b) * 252 / [std(R_i - R_b) * sqrt(252)]"),
+    ("VaR exception", "I_t = 1{L_t > VaR_{alpha,t}}, L_t=-R_t"),
+    ("Kupiec POF", "LR_uc = -2 ln[L(p) / L(x/T)]"),
+    ("Probabilistic Sharpe", "PSR = Phi((SR - SR*) sqrt(T-1) / sqrt(1 - gamma_3 SR + ((gamma_4-1)/4) SR^2))"),
+    ("Square-root impact", "impact_bps = k * sigma_ann * sqrt(participation) * 10000"),
 ]
 
 
@@ -145,7 +151,7 @@ def render_stock_report_markdown(report_model: dict[str, Any]) -> str:
         "",
         "## 2. Executive Summary",
         "",
-        _executive_summary(asset_id, metrics, conclusions),
+        _executive_summary(asset_id, metrics, conclusions, stock),
         "",
         "## 3. Plain-English Summary",
         "",
@@ -251,6 +257,7 @@ def write_stock_academic_report(
             asset_id,
             _mapping(report_model.get("metrics")),
             _mapping(report_model.get("conclusions")),
+            _mapping(report_model.get("stock")),
         ),
     }
     metadata_path = stock_dir / "metadata.json"
@@ -317,16 +324,33 @@ def _render_section(title: str, report_model: dict[str, Any]) -> list[str]:
     lines.append("")
     if section_key == "Data & Provenance":
         lines.extend([_data_table(stock), ""])
+    if section_key == "Literature-Driven Research Design":
+        lines.extend([
+            _literature_design_table(stock),
+            "",
+            _empirical_studies_summary_table(stock),
+            "",
+        ])
     if section_key in {"Performance Metrics", "CAPM Metrics", "Quantitative Decision Signal"}:
         lines.extend([_metrics_table(metrics), ""])
+    if section_key == "Performance Metrics":
+        lines.extend([_sharpe_inference_table(stock), ""])
+    if section_key in {"CAPM Metrics", "Comparison Against Benchmark"}:
+        lines.extend([_benchmark_relative_table(stock), ""])
+    if section_key == "Price Dynamics":
+        lines.extend([_momentum_liquidity_table(stock), "", _range_volatility_table(stock), ""])
+    if section_key == "Value at Risk Analysis":
+        lines.extend([_tail_risk_backtesting_table(stock), ""])
     if section_key == "ML Forecasting Assessment":
-        lines.extend([_ml_table(stock), ""])
+        lines.extend([_ml_table(stock), "", _predictive_reliability_table(stock), ""])
+    if section_key == "Backtesting Analysis":
+        lines.extend([_execution_cost_table(stock), ""])
     if section_key == "Options Analytics":
         lines.extend([_options_table(stock), ""])
     if section_key in {"Quantitative Decision Signal", "Stock-Specific Conclusions"}:
         lines.extend([_research_action_table(conclusions), ""])
     if section_key == "Bibliography & Method Traceability":
-        lines.extend([_bibliography_table(report_model), ""])
+        lines.extend([_literature_implementation_table(stock), "", _bibliography_table(report_model), ""])
     if section_key == "Mathematical Appendix":
         lines.extend([_formula_table(), ""])
     if figure_keys:
@@ -353,6 +377,18 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             [],
             [],
             common_limit,
+        ),
+        "Literature-Driven Research Design": (
+            "Esta seccion traduce la bibliografia cuantitativa en pruebas reproducibles con los datos disponibles. "
+            "Cuando una linea de investigacion requiere datos no presentes, se marca como proxy o no soportada.",
+            "El diseno separa tres niveles: evidencia implementada con OHLCV diario, diagnosticos proxy y estudios "
+            "no replicables sin datos institucionales como factores point-in-time, intradia/order book o universos survivorship-free.",
+            [
+                ("Information ratio", "IR = mean(R_i - R_b) * 252 / [std(R_i - R_b) * sqrt(252)]"),
+                ("VaR exception", "I_t = 1{L_t > VaR_{alpha,t}}"),
+            ],
+            [],
+            "Una implementacion proxy no equivale a una replica academica completa ni valida alpha tradable.",
         ),
         "Data & Provenance": (
             "Esta seccion dice de donde salen los datos y que periodo cubren.",
@@ -385,7 +421,7 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
         "Return Construction": (
             "GRAFICA D (Simple Returns): retorno diario simple, muestra magnitud de movimientos. "
             "GRAFICA E (Log Returns): retorno logaritmico, usado en modelos continuos. "
-            "GRAFICA F (Cumulative Returns): crecimiento de 100 EUR, muestra el poder del interes compuesto. "
+            "GRAFICA F (Cumulative Returns): crecimiento de 100 unidades monetarias, muestra el poder del interes compuesto. "
             "GRAFICA G (Returns Distribution): histograma de retornos diarios con media marcada. "
             "Interpretacion economica: la prima de riesgo historica se refleja en la pendiente de F. "
             "Cuanto mas pronunciada la curva F, mayor rentabilidad compuesta.",
@@ -397,7 +433,7 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             common_limit,
         ),
         "Performance Metrics": (
-            "GRAFICA F (Cumulative Returns): 100 EUR invertidos al inicio. "
+            "GRAFICA F (Cumulative Returns): 100 unidades monetarias invertidas al inicio. "
             "GRAFICA I (Rolling Sharpe): eficiencia riesgo-retorno a lo largo del tiempo. "
             "TABLA DE METRICAS: Annualized Return, CAGR, Volatilidad, Sharpe, Sortino, Calmar, Hit Rate. "
             "Interpretacion economica: Sharpe > 1 indica que el retorno compensa el riesgo total. "
@@ -428,6 +464,8 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
         ),
         "CAPM Metrics": (
             "GRAFICA J (Rolling Beta): estabilidad de la sensibilidad al mercado. "
+            "GRAFICA V (Rolling Correlation): comovimiento temporal con el benchmark. "
+            "GRAFICA W (Active Return): exceso acumulado frente al benchmark. "
             "TABLA CAPM: Beta, Treynor, Jensen Alpha. "
             "Interpretacion economica: Beta indica cuanto riesgo de mercado tiene el activo. "
             "Alpha positivo significa que el activo rindio mas de lo esperado por su riesgo sistematico. "
@@ -436,11 +474,12 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "Treynor_i = (R_i - R_f)/Beta_i. CAPM: E[R_i] = R_f + Beta_i*(E[R_m]-R_f). "
             "Beta estima el riesgo sistematico; alpha mide el valor anadido (o destruido).",
             FORMULAS[7:10],
-            ["rolling_beta"],
+            ["rolling_beta", "rolling_correlation", "active_return"],
             "El benchmark no es el mercado completo y beta puede cambiar por ventana temporal.",
         ),
         "Value at Risk Analysis": (
             "GRAFICA K (VaR/ES Comparison): comparacion de modelos (historico, normal, MC). "
+            "GRAFICA X (VaR Exceptions): perdidas historicas que exceden el VaR rolling. "
             "GRAFICA G (Returns Distribution): la cola izquierda muestra donde estan las perdidas. "
             "Interpretacion economica: VaR 95% = perdida que no se supera el 95% de los dias. "
             "ES 95% = perdida media en el peor 5% de los dias. "
@@ -449,18 +488,18 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "ES_alpha = E[L | L >= VaR_alpha]. Alpha = 95%. "
             "Tres modelos: historico (empirico), normal parametrico, Monte Carlo.",
             FORMULAS[10:12],
-            ["var_comparison", "returns_distribution"],
+            ["var_comparison", "var_exceptions", "returns_distribution"],
             "VaR no mide todo lo que ocurre mas alla del umbral y depende del modelo.",
         ),
         "Monte Carlo Simulation": (
-            "GRAFICA L (MC Paths): 25 trayectorias simuladas de 1000. "
+            "GRAFICA L (MC Paths): muestra representativa de trayectorias simuladas. "
             "GRAFICA M (MC Percentiles): P5, P25, P50, P75, P95. "
             "GRAFICA N (MC Terminal Distribution): histograma de resultados finales. "
             "Interpretacion economica: la dispersion entre P5 y P95 mide la incertidumbre. "
             "P50 (mediana) es el escenario central. Probabilidad de perdida = % de simulaciones con resultado < 0. "
             "Un activo con P5 muy negativo pero P95 muy positivo tiene alta dispersion (alto riesgo).",
             "GBM: S_t = S_0 exp((mu - 0.5*sigma^2)t + sigma*W_t). "
-            "1000 simulaciones, horizonte 252 dias. Parametros estimados de la serie historica. "
+            "Numero configurado de simulaciones, horizonte 252 dias. Parametros estimados de la serie historica. "
             "Percentiles empiricos de la distribucion terminal. Seed reproducible.",
             [("GBM", FORMULAS[12][1])],
             ["monte_carlo_paths", "monte_carlo_percentiles", "monte_carlo_terminal_distribution"],
@@ -474,8 +513,9 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "Metodos: Ridge (L2), Lasso (L1), ElasticNet (L1+L2), Gradient Boosting, Random Forest. "
             "Validacion: walk-forward expanding window con purge gap = horizon_days. "
             "Referencia: Gu, Kelly & Xiu (2020), Rev. Financial Studies, 33(5), 2223-2273. "
-            "Interpretacion: si el modelo no supera al baseline naive en RMSE y directional accuracy, "
-            "la evidencia predictiva es debil. IC > 0.03 se considera significativo.",
+            "Interpretacion: el modelo solo pasa el audit predictivo si mejora RMSE, mejora DA, "
+            "mantiene OOS R^2 positivo e IC positivo. La rentabilidad historica del activo no valida "
+            "el modelo. IC > 0.03 se considera economicamente relevante, pero no suficiente por si solo.",
             "Ridge: argmin{||Y-Xbeta||^2 + lambda*||beta||^2}. "
             "Lasso: argmin{||Y-Xbeta||^2 + lambda*||beta||_1}. "
             "ElasticNet: argmin{||Y-Xbeta||^2 + lambda1*||beta||_1 + lambda2*||beta||^2}. "
@@ -494,12 +534,13 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
                 ("OOS R^2", "1 - sum(R-hat{R})^2 / sum(R-mean(R))^2"),
             ],
             ["ml_prediction_vs_actual", "ml_residuals", "ml_model_comparison", "ml_feature_importance"],
-            "Un modelo que no supera al baseline naive debe marcarse como diagnostico debil, no como prediccion fiable. "
-            "El status STATUS_OUTPERFORMS requiere RMSE menor Y directional accuracy >= 2% superior al naive.",
+            "Un modelo que no supera los criterios estrictos debe marcarse como diagnostico debil, no como prediccion fiable. "
+            "El status de edge requiere RMSE menor, MAE menor, DA >=52%, DA edge >=2%, OOS R^2 > 0, IC > 0 y Sharpe simulado positivo.",
         ),
         "Backtesting Analysis": (
             "GRAFICA O (Backtest Equity Curves): capital ficticio de cada estrategia. "
-            "Interpretacion economica: buy-and-hold con 10.000 EUR iniciales. "
+            "GRAFICA Y (Execution Costs): escenarios de coste hipotetico por participacion de ADV. "
+            "Interpretacion economica: buy-and-hold con 10.000 unidades monetarias iniciales. "
             "El equity final muestra la rentabilidad neta. "
             "El drawdown del backtest muestra el riesgo real de la estrategia. "
             "Comparacion entre estrategias indica que reglas funcionaron mejor en el pasado.",
@@ -507,7 +548,7 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "Convencion: datos disponibles hasta t, ejecucion en t+1 (sin look-ahead). "
             "Estrategias: buy-and-hold (referencia pasiva), y otras segun config.",
             [("Equity curve", "V_t = V_0 prod_{s<=t}(1+R_s)")],
-            ["backtest_equity_curves"],
+            ["backtest_equity_curves", "execution_costs"],
             "No modela fills reales, liquidez intradia ni impacto de mercado profesional.",
         ),
         "Options Analytics": (
@@ -525,10 +566,11 @@ def _section_content(section: str) -> tuple[str, str, list[tuple[str, str]], lis
             "PARAMETRIC_EDUCATIONAL_MODEL: sin option chain, smile, dividendos reales ni microestructura.",
         ),
         "Comparison Against Benchmark": (
-            "El benchmark sirve como referencia, no como verdad absoluta.",
-            "La comparacion usa beta y alpha frente al benchmark configurado.",
-            FORMULAS[7:10],
-            ["rolling_beta"],
+            "El benchmark sirve como referencia, no como verdad absoluta. Active return y tracking error muestran "
+            "si el activo se separo historicamente de esa referencia.",
+            "La comparacion usa beta, correlacion, active return, tracking error, information ratio y capture ratios frente al benchmark configurado.",
+            FORMULAS[7:10] + [("Information ratio", "IR = annualized_active_return / tracking_error")],
+            ["rolling_beta", "rolling_correlation", "active_return"],
             "SPY u otro proxy no captura todo el conjunto de oportunidades de mercado.",
         ),
         "Statistical Interpretation": (
@@ -615,16 +657,28 @@ def _section_conclusion(section: str, conclusions: dict[str, Any]) -> str:
     return "La interpretacion debe leerse historicamente, bajo supuestos del modelo y sin extrapolar a decisiones operativas."
 
 
-def _executive_summary(asset_id: str, metrics: dict[str, Any], conclusions: dict[str, Any]) -> str:
+def _executive_summary(
+    asset_id: str,
+    metrics: dict[str, Any],
+    conclusions: dict[str, Any],
+    stock: dict[str, Any],
+) -> str:
+    ml = _mapping(stock.get("ml_forecasting"))
+    audit = _mapping(stock.get("predictive_reliability_audit"))
     return (
-        f"Para {asset_id}, en el periodo analizado, el rendimiento acumulado fue "
-        f"{_pct(metrics.get('final_cumulative_return'))}, la volatilidad anualizada fue "
-        f"{_pct(metrics.get('annualized_volatility'))}, el maximo drawdown fue "
+        f"Historical asset profile: para {asset_id}, en el periodo analizado, el rendimiento "
+        f"acumulado fue {_pct(metrics.get('final_cumulative_return'))}, la volatilidad anualizada "
+        f"fue {_pct(metrics.get('annualized_volatility'))}, el maximo drawdown fue "
         f"{_pct(metrics.get('max_drawdown'))}, Sharpe fue {_num(metrics.get('sharpe_ratio'))}, "
         f"Sortino fue {_num(metrics.get('sortino_ratio'))}, beta fue "
-        f"{_num(metrics.get('beta_to_benchmark'))} y Jensen alpha fue "
-        f"{_pct(metrics.get('jensen_alpha'))}. {conclusions.get('Monte Carlo interpretation', '')} "
-        f"{conclusions.get('Backtesting interpretation', '')} No implica prediccion ni asesoramiento."
+        f"{_num(metrics.get('beta_to_benchmark'))} y Jensen alpha CAPM fue "
+        f"{_pct(metrics.get('jensen_alpha'))}. "
+        "Estas metricas describen buy-and-hold/riesgo historico, no alpha del modelo. "
+        f"Predictive model audit: rating={audit.get('rating', 'N/A')}; "
+        f"ML status={ml.get('status', 'N/A')}; OOS R^2={_num(ml.get('oos_r_squared'))}; "
+        f"IC={_num(ml.get('information_coefficient'))}; DA={_pct(ml.get('directional_accuracy'))}; "
+        f"naive DA={_pct(ml.get('baseline_directional_accuracy'))}. "
+        f"{audit.get('interpretation', '')} No implica prediccion ni asesoramiento."
     )
 
 
@@ -682,10 +736,261 @@ def _ml_table(stock: dict[str, Any]) -> str:
         "Information coefficient": _num(ml.get("information_coefficient")),
         "Directional accuracy": _pct(ml.get("directional_accuracy")),
         "Naive directional accuracy": _pct(ml.get("baseline_directional_accuracy")),
+        "DA edge vs naive": _pct(ml.get("directional_accuracy_edge_vs_naive")),
+        "RMSE improvement vs naive": _num(ml.get("rmse_improvement_vs_naive")),
+        "Status reason": ml.get("status_reason"),
         "GARCH annual volatility": _pct(garch.get("conditional_volatility_annual")),
         "GARCH persistence": _num(garch.get("persistence")),
     }
     return _key_value_table(selected)
+
+
+def _predictive_reliability_table(stock: dict[str, Any]) -> str:
+    audit = _mapping(stock.get("predictive_reliability_audit"))
+    criteria = audit.get("criteria", [])
+    rows = [
+        "| Predictive reliability criterion | Passed | Observed | Required |",
+        "| --- | --- | --- | --- |",
+    ]
+    if isinstance(criteria, list):
+        for item in criteria:
+            if not isinstance(item, dict):
+                continue
+            rows.append(
+                "| {criterion} | {passed} | {observed} | {required} |".format(
+                    criterion=item.get("criterion"),
+                    passed=item.get("passed"),
+                    observed=item.get("observed"),
+                    required=item.get("required"),
+                )
+            )
+    rows.extend([
+        "",
+        _key_value_table(
+            {
+                "Predictive reliability rating": audit.get("rating", "N/A"),
+                "Strict predictive edge validated": audit.get(
+                    "strict_predictive_edge_validated", False
+                ),
+                "Interpretation": audit.get("interpretation", "N/A"),
+            }
+        ),
+    ])
+    return "\n".join(rows)
+
+
+def _literature_design_table(stock: dict[str, Any]) -> str:
+    rows = [
+        "| Research family | Status | Supported in this report | Not supported with current data |",
+        "| --- | --- | --- | --- |",
+    ]
+    for item in _list_of_mappings(stock.get("literature_implementation_map")):
+        rows.append(
+            "| {family} | {status} | {supported} | {unsupported} |".format(
+                family=_cell(item.get("research_family")),
+                status=_cell(item.get("implemented_status")),
+                supported=_cell(item.get("what_is_supported")),
+                unsupported=_cell(item.get("what_is_not_supported")),
+            )
+        )
+    return "\n".join(rows)
+
+
+def _empirical_studies_summary_table(stock: dict[str, Any]) -> str:
+    blocks = {
+        "Benchmark-relative": "benchmark_relative_study",
+        "Momentum/liquidity": "momentum_liquidity_study",
+        "Range volatility": "range_volatility_study",
+        "Sharpe inference": "sharpe_inference_study",
+        "VaR backtesting": "tail_risk_backtesting_study",
+        "Execution cost scenario": "execution_cost_study",
+    }
+    rows = ["| Study block | Status | Key output |", "| --- | --- | --- |"]
+    for label, key in blocks.items():
+        payload = _mapping(stock.get(key))
+        rows.append(
+            "| {label} | {status} | {summary} |".format(
+                label=label,
+                status=_cell(payload.get("status", "N/A")),
+                summary=_cell(_study_key_output(key, payload)),
+            )
+        )
+    return "\n".join(rows)
+
+
+def _study_key_output(key: str, payload: dict[str, Any]) -> str:
+    if key == "benchmark_relative_study":
+        return (
+            f"active return {_pct(payload.get('active_annualized_return'))}; "
+            f"IR {_num(payload.get('information_ratio'))}"
+        )
+    if key == "momentum_liquidity_study":
+        return (
+            f"12m momentum {_pct(payload.get('momentum_12m'))}; "
+            f"ADV20 {_num(payload.get('average_volume_20d'))}"
+        )
+    if key == "range_volatility_study":
+        return f"Parkinson vol {_pct(payload.get('parkinson_volatility_annual'))}"
+    if key == "sharpe_inference_study":
+        return f"PSR>0 {_pct(payload.get('probabilistic_sharpe_ratio_gt_zero'))}"
+    if key == "tail_risk_backtesting_study":
+        level = _mapping(_mapping(payload.get("levels")).get("alpha_95"))
+        return f"VaR95 exceptions {level.get('exceptions', 'N/A')}"
+    if key == "execution_cost_study":
+        rows = _list_of_mappings(payload.get("scenario_rows"))
+        return f"scenarios {len(rows)}; ADV$20 {_num(payload.get('average_daily_dollar_volume_20d'))}"
+    return "N/A"
+
+
+def _benchmark_relative_table(stock: dict[str, Any]) -> str:
+    payload = _mapping(stock.get("benchmark_relative_study"))
+    return _key_value_table(
+        {
+            "Study status": payload.get("status"),
+            "Active annualized return": _pct(payload.get("active_annualized_return")),
+            "Tracking error": _pct(payload.get("tracking_error")),
+            "Information ratio": _num(payload.get("information_ratio")),
+            "Correlation to benchmark": _num(payload.get("correlation_to_benchmark")),
+            "Upside capture": _num(payload.get("upside_capture")),
+            "Downside capture": _num(payload.get("downside_capture")),
+            "Limit": "Benchmark proxy only; not full Fama-French-Carhart alpha.",
+        }
+    )
+
+
+def _momentum_liquidity_table(stock: dict[str, Any]) -> str:
+    payload = _mapping(stock.get("momentum_liquidity_study"))
+    return _key_value_table(
+        {
+            "Study status": payload.get("status"),
+            "Momentum 1m": _pct(payload.get("momentum_1m")),
+            "Momentum 3m": _pct(payload.get("momentum_3m")),
+            "Momentum 6m": _pct(payload.get("momentum_6m")),
+            "Momentum 12m": _pct(payload.get("momentum_12m")),
+            "Momentum 12m skip 1m": _pct(payload.get("momentum_12m_skip_1m")),
+            "Distance to 52w high": _pct(payload.get("distance_to_52w_high")),
+            "Average volume 20d": _num(payload.get("average_volume_20d")),
+            "Average dollar volume 20d": _num(payload.get("average_dollar_volume_20d")),
+            "Amihud illiquidity mean 252d": _num(payload.get("amihud_illiq_mean_252d")),
+        }
+    )
+
+
+def _range_volatility_table(stock: dict[str, Any]) -> str:
+    payload = _mapping(stock.get("range_volatility_study"))
+    return _key_value_table(
+        {
+            "Study status": payload.get("status"),
+            "Parkinson annual volatility": _pct(payload.get("parkinson_volatility_annual")),
+            "Garman-Klass annual volatility": _pct(
+                payload.get("garman_klass_volatility_annual")
+            ),
+            "Rogers-Satchell annual volatility": _pct(
+                payload.get("rogers_satchell_volatility_annual")
+            ),
+            "Observations": payload.get("observations"),
+            "Limit": "Daily OHLC proxy; not intraday realized volatility.",
+        }
+    )
+
+
+def _sharpe_inference_table(stock: dict[str, Any]) -> str:
+    payload = _mapping(stock.get("sharpe_inference_study"))
+    return _key_value_table(
+        {
+            "Study status": payload.get("status"),
+            "Annualized Sharpe": _num(payload.get("annualized_sharpe")),
+            "Sharpe SE annualized": _num(payload.get("sharpe_standard_error_annualized")),
+            "Probabilistic Sharpe > 0": _pct(payload.get("probabilistic_sharpe_ratio_gt_zero")),
+            "Multiple-testing trial count": payload.get("multiple_testing_trial_count"),
+            "Deflated Sharpe threshold annualized": _num(
+                payload.get("deflated_sharpe_threshold_annualized")
+            ),
+            "Deflated Sharpe probability": _pct(payload.get("deflated_sharpe_probability")),
+            "Limit": "Approximation; not full strategy-zoo reconstruction.",
+        }
+    )
+
+
+def _tail_risk_backtesting_table(stock: dict[str, Any]) -> str:
+    payload = _mapping(stock.get("tail_risk_backtesting_study"))
+    levels = _mapping(payload.get("levels"))
+    rows = [
+        "| Level | Obs | Exceptions | Expected | Exception rate | Kupiec p | Christoffersen p | CC status |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for level_key in ("alpha_95", "alpha_99"):
+        level = _mapping(levels.get(level_key))
+        kupiec = _mapping(level.get("kupiec_pof"))
+        christoffersen = _mapping(level.get("christoffersen_independence"))
+        rows.append(
+            "| {level} | {obs} | {exceptions} | {expected} | {rate} | {kupiec} | {christoffersen} | {status} |".format(
+                level=_pct(level.get("alpha")),
+                obs=level.get("observations", "N/A"),
+                exceptions=level.get("exceptions", "N/A"),
+                expected=_num(level.get("expected_exceptions")),
+                rate=_pct(level.get("exception_rate")),
+                kupiec=_num(kupiec.get("p_value")),
+                christoffersen=_num(christoffersen.get("p_value")),
+                status=_cell(level.get("conditional_coverage_status", "N/A")),
+            )
+        )
+    rows.extend(["", f"Loss convention: {_cell(payload.get('loss_sign_convention', 'N/A'))}"])
+    return "\n".join(rows)
+
+
+def _execution_cost_table(stock: dict[str, Any]) -> str:
+    payload = _mapping(stock.get("execution_cost_study"))
+    rows = [
+        "| Participation ADV | Hypothetical notional | Half spread bps | Impact bps | Total bps | Cost per 100k |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in _list_of_mappings(payload.get("scenario_rows")):
+        rows.append(
+            "| {participation} | {notional} | {spread} | {impact} | {total} | {cost} |".format(
+                participation=_pct(item.get("participation_rate_of_adv")),
+                notional=_num(item.get("hypothetical_notional")),
+                spread=_num(item.get("assumed_half_spread_bps")),
+                impact=_num(item.get("square_root_impact_bps")),
+                total=_num(item.get("total_one_way_cost_bps")),
+                cost=_num(item.get("cost_per_100k_notional")),
+            )
+        )
+    rows.extend([
+        "",
+        _key_value_table(
+            {
+                "Study status": payload.get("status"),
+                "Average daily dollar volume 20d": _num(
+                    payload.get("average_daily_dollar_volume_20d")
+                ),
+                "Limit": "Scenario analysis only; no orders, no sizing, no broker fills.",
+            }
+        ),
+    ])
+    return "\n".join(rows)
+
+
+def _literature_implementation_table(stock: dict[str, Any]) -> str:
+    rows = [
+        "| Report block | Research family | References | Implementation status |",
+        "| --- | --- | --- | --- |",
+    ]
+    for item in _list_of_mappings(stock.get("literature_implementation_map")):
+        references = item.get("references", [])
+        if isinstance(references, list):
+            references_text = ", ".join(str(ref) for ref in references)
+        else:
+            references_text = str(references)
+        rows.append(
+            "| {block} | {family} | {references} | {status} |".format(
+                block=_cell(item.get("report_block")),
+                family=_cell(item.get("research_family")),
+                references=_cell(references_text),
+                status=_cell(item.get("implemented_status")),
+            )
+        )
+    return "\n".join(rows)
 
 
 def _options_table(stock: dict[str, Any]) -> str:
@@ -925,6 +1230,8 @@ def _static_svg_for(name: str, stock: dict[str, Any]) -> str:
         "rolling_volatility": ("rolling_volatility", "rolling_volatility"),
         "rolling_sharpe": ("rolling_sharpe", "rolling_sharpe"),
         "rolling_beta": ("rolling_beta", "rolling_beta"),
+        "rolling_correlation": ("rolling_correlation", "rolling_correlation"),
+        "active_return": ("active_cumulative_returns", "active_cumulative_return"),
     }
     if name in line_map:
         series_key, value_key = line_map[name]
@@ -941,6 +1248,16 @@ def _static_svg_for(name: str, stock: dict[str, Any]) -> str:
             bars.append((f"{model} VaR", payload.get("var")))
             bars.append((f"{model} ES", payload.get("expected_shortfall")))
         return _bar_svg(bars)
+    if name == "var_exceptions":
+        rows = _rows(
+            _mapping(stock.get("tail_risk_backtesting_study")).get("rolling_exception_rows_95")
+        )
+        return _line_svg(
+            [
+                ("loss", [row.get("loss") for row in rows]),
+                ("rolling VaR", [row.get("rolling_historical_var") for row in rows]),
+            ]
+        )
     if name == "monte_carlo_paths":
         paths = _rows(_mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal")).get("paths_sample"))
         groups = []
@@ -961,6 +1278,17 @@ def _static_svg_for(name: str, stock: dict[str, Any]) -> str:
             rows = _rows(_mapping(payload).get("equity_curve"))
             groups.append((str(label), [row.get("equity") for row in rows]))
         return _line_svg(groups)
+    if name == "execution_costs":
+        rows = _rows(_mapping(stock.get("execution_cost_study")).get("scenario_rows"))
+        return _bar_svg(
+            [
+                (
+                    f"{_pct(row.get('participation_rate_of_adv'))} ADV",
+                    row.get("total_one_way_cost_bps"),
+                )
+                for row in rows
+            ]
+        )
     if name == "options_payoff":
         options = _mapping(stock.get("options_theoretical_analytics"))
         call_rows = _rows(options.get("payoff_profile"))
@@ -1114,12 +1442,16 @@ def _figure_caption(name: str) -> str:
         "rolling_volatility": "Volatilidad movil anualizada: identifica periodos de turbulencia y calma.",
         "rolling_sharpe": "Sharpe movil: eficiencia historica riesgo-retorno por ventana.",
         "rolling_beta": "Beta movil frente al benchmark: sensibilidad al mercado y estabilidad del riesgo sistematico.",
+        "rolling_correlation": "Correlacion movil frente al benchmark: mide comovimiento historico y estabilidad relativa.",
+        "active_return": "Active return acumulado: riqueza relativa activo/benchmark menos 1.",
         "returns_distribution": "Distribucion empirica de retornos: asimetria y colas gruesas.",
         "var_comparison": "VaR y Expected Shortfall: umbral y perdida media de cola.",
+        "var_exceptions": "Backtest de VaR: perdidas positivas que exceden el umbral rolling.",
         "monte_carlo_paths": "Trayectorias simuladas: escenarios posibles bajo supuestos del modelo.",
         "monte_carlo_percentiles": "Fan chart: percentiles P5-P95 de la simulacion.",
         "monte_carlo_terminal_distribution": "Distribucion terminal: resultados simulados al final del horizonte.",
         "backtest_equity_curves": "Curvas de capital ficticio: backtest historico sin ejecucion real.",
+        "execution_costs": "Escenarios hipoteticos de costes: spread e impacto por participacion de ADV.",
         "options_payoff": "Payoff teorico de opciones: convexidad y proteccion conceptual.",
         "greeks": "Griegas BSM: sensibilidad a precio, volatilidad, tiempo y tipo.",
         "ml_prediction_vs_actual": "Prediccion walk-forward vs retorno realizado.",
@@ -1136,6 +1468,19 @@ def _rows(value: object) -> list[dict[str, Any]]:
 
 def _mapping(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _list_of_mappings(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _cell(value: object) -> str:
+    if value is None:
+        return "N/A"
+    text = str(value).replace("|", "/").replace("\n", " ")
+    return text
 
 
 def _float(value: object) -> float | None:

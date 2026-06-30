@@ -27,12 +27,16 @@ FIGURE_FILENAMES = {
     "rolling_volatility": "rolling_volatility.html",
     "rolling_sharpe": "rolling_sharpe.html",
     "rolling_beta": "rolling_beta.html",
+    "rolling_correlation": "rolling_correlation.html",
+    "active_return": "active_return.html",
     "returns_distribution": "returns_distribution.html",
     "var_comparison": "var_comparison.html",
+    "var_exceptions": "var_exceptions.html",
     "monte_carlo_paths": "monte_carlo_paths.html",
     "monte_carlo_percentiles": "monte_carlo_percentiles.html",
     "monte_carlo_terminal_distribution": "monte_carlo_terminal_distribution.html",
     "backtest_equity_curves": "backtest_equity_curves.html",
+    "execution_costs": "execution_costs.html",
     "options_payoff": "options_payoff.html",
     "greeks": "greeks.html",
     "ml_prediction_vs_actual": "ml_prediction_vs_actual.html",
@@ -45,12 +49,14 @@ _SECTION_LETTERS = {
     "price_history": "A", "volume": "B", "drawdown": "C",
     "simple_returns": "D", "log_returns": "E", "cumulative_returns": "F",
     "returns_distribution": "G", "rolling_volatility": "H", "rolling_sharpe": "I",
-    "rolling_beta": "J", "var_comparison": "K",
-    "monte_carlo_paths": "L", "monte_carlo_percentiles": "M",
-    "monte_carlo_terminal_distribution": "N",
-    "backtest_equity_curves": "O", "options_payoff": "P", "greeks": "Q",
-    "ml_prediction_vs_actual": "R", "ml_residuals": "S",
-    "ml_model_comparison": "T", "ml_feature_importance": "U",
+    "rolling_beta": "J", "rolling_correlation": "K", "active_return": "L",
+    "var_comparison": "M", "var_exceptions": "N",
+    "monte_carlo_paths": "O", "monte_carlo_percentiles": "P",
+    "monte_carlo_terminal_distribution": "Q",
+    "backtest_equity_curves": "R", "execution_costs": "S",
+    "options_payoff": "T", "greeks": "U",
+    "ml_prediction_vs_actual": "V", "ml_residuals": "W",
+    "ml_model_comparison": "X", "ml_feature_importance": "Y",
 }
 
 
@@ -78,15 +84,26 @@ def build_academic_stock_figures(report_model: dict[str, Any]) -> dict[str, Any]
         "rolling_beta": _line_figure(stock, "rolling_beta", "rolling_beta",
                                      "Rolling Beta (vs Benchmark)", "Beta",
                                      "Beta movil de 63 sesiones contra el benchmark"),
+        "rolling_correlation": _line_figure(
+            stock,
+            "rolling_correlation",
+            "rolling_correlation",
+            "Rolling Correlation (vs Benchmark)",
+            "Correlation",
+            "Correlacion movil de 63 sesiones contra el benchmark",
+        ),
+        "active_return": _active_return_figure(stock),
         "returns_distribution": _histogram_figure(
             stock, "simple_returns", "return",
             "Returns Distribution", "Daily return"
         ),
         "var_comparison": _var_comparison_figure(stock),
+        "var_exceptions": _var_exceptions_figure(stock),
         "monte_carlo_paths": _monte_carlo_paths_figure(stock),
         "monte_carlo_percentiles": _monte_carlo_percentiles_figure(stock),
         "monte_carlo_terminal_distribution": _monte_carlo_terminal_figure(stock),
         "backtest_equity_curves": _backtest_equity_figure(stock),
+        "execution_costs": _execution_costs_figure(stock),
         "options_payoff": _options_payoff_figure(stock),
         "greeks": _greeks_figure(stock),
         "ml_prediction_vs_actual": _ml_prediction_figure(ml),
@@ -136,9 +153,15 @@ def _price_figure(stock: dict[str, Any], metrics: dict[str, Any]):
         "Obtencion: proveedor yfinance OHLCV campo 'Close'. "
         "Interpretacion: permite identificar tendencia direccional, "
         "soportes/resistencias visuales, y puntos de inflexion historicos.")
-    _apply_layout(figure, stock, "Precio historico (Price History)", "Date", "Price (USD)",
-                  "Evolucion del precio de cierre ajustado. Muestra tendencia de largo plazo, "
-                  "volatilidad y posibles puntos de entrada/salida.")
+    _apply_layout(
+        figure,
+        stock,
+        "Precio historico (Price History)",
+        "Date",
+        f"Price ({_currency(stock)})",
+        "Evolucion del precio de cierre ajustado. Muestra tendencia de largo plazo, "
+        "volatilidad y posibles puntos de entrada/salida.",
+    )
     return figure
 
 
@@ -146,31 +169,32 @@ def _cumret_figure(stock: dict[str, Any], metrics: dict[str, Any]):
     go = _plotly_go()
     rows = _rows(stock.get("cumulative_returns"))
     figure = go.Figure()
+    currency = _currency(stock)
     if rows:
         cumret = [row.get("cumulative_return") for row in rows]
         start_val = 100.0
         equity = [start_val * (1 + v) for v in cumret]
         figure.add_trace(go.Scatter(
             x=[row.get("timestamp") for row in rows],
-            y=equity, mode="lines", name="100 EUR invertido",
-            hovertemplate="Date=%{x}<br>Valor=%{y:.2f} EUR<extra></extra>",
+            y=equity, mode="lines", name=f"100 {currency} invertido",
+            hovertemplate=f"Date=%{{x}}<br>Valor=%{{y:.2f}} {currency}<extra></extra>",
             line=dict(color="#f2d27a", width=2),
         ))
         figure.add_hline(y=start_val, line_dash="dash", line_color="#6b7b8b",
-                         annotation_text="Capital inicial (100 EUR)")
+                         annotation_text=f"Capital inicial (100 {currency})")
     ret = metrics.get("annualized_return")
     cagr = metrics.get("cagr")
     _add_annotation(figure,
-        "GRAFICA F: Crecimiento de 100 EUR (Valor Compuesto). "
+        f"GRAFICA F: Crecimiento de 100 {currency} (Valor Compuesto). "
         "Variables: V_t = V_0 * prod_{s<=t}(1+R_s), V_0=100, R_s = retorno simple diario. "
         "Obtencion: retorno compuesto acumulado a partir de retornos simples diarios. "
         "Rendimiento anualizado: R_p = mean(R_t) * 252. "
         f"Rentabilidad anualizada: {_pct(ret)} | CAGR: {_pct(cagr)}. "
         "Interpretacion: permite comparar visualmente la evolucion de distintos activos. "
         "Una pendiente positiva indica crecimiento; negativa indica perdida de capital.")
-    _apply_layout(figure, stock, "Crecimiento de 100 EUR (Cumulative Returns)", "Date",
-                  "Valor de la inversion (EUR)",
-                  "Muestra la evolucion de 100 EUR invertidos al inicio del periodo. "
+    _apply_layout(figure, stock, f"Crecimiento de 100 {currency} (Cumulative Returns)", "Date",
+                  f"Valor de la inversion ({currency})",
+                  f"Muestra la evolucion de 100 {currency} invertidos al inicio del periodo. "
                   "Facilita comparacion visual entre activos y con buy-and-hold.")
     return figure
 
@@ -285,6 +309,43 @@ def _line_figure(
     return figure
 
 
+def _active_return_figure(stock: dict[str, Any]):
+    go = _plotly_go()
+    rows = _rows(stock.get("active_cumulative_returns"))
+    study = _mapping(stock.get("benchmark_relative_study"))
+    figure = go.Figure()
+    if rows:
+        figure.add_trace(go.Scatter(
+            x=[row.get("timestamp") for row in rows],
+            y=[row.get("active_cumulative_return") for row in rows],
+            mode="lines",
+            name="Active cumulative return",
+            hovertemplate="Date=%{x}<br>Active=%{y:.2%}<extra></extra>",
+            line=dict(color="#f2d27a", width=2),
+        ))
+        figure.add_hline(y=0, line_dash="dash", line_color="#6b7b8b")
+    _add_annotation(
+        figure,
+        "GRAFICA W: Active return acumulado frente al benchmark. "
+        "Variables: WR_t = wealth_asset_t / wealth_benchmark_t - 1. "
+        "Obtencion: composicion diaria de retornos del activo y benchmark con base 1. "
+        f"Active return anualizado: {_pct(study.get('active_annualized_return'))}; "
+        f"tracking error: {_pct(study.get('tracking_error'))}; "
+        f"information ratio: {_num(study.get('information_ratio'))}. "
+        "Interpretacion: valores positivos indican outperformance historica relativa, "
+        "no alpha causal ni senal operativa.",
+    )
+    _apply_layout(
+        figure,
+        stock,
+        "Active cumulative return vs benchmark",
+        "Date",
+        "Active cumulative return (%)",
+        "Wealth relative asset/benchmark minus 1. Benchmark proxy only.",
+    )
+    return figure
+
+
 def _bar_figure(
     stock: dict[str, Any], series_key: str, value_key: str,
     title: str, yaxis_title: str, subtitle: str,
@@ -371,10 +432,66 @@ def _var_comparison_figure(stock: dict[str, Any]):
     return figure
 
 
+def _var_exceptions_figure(stock: dict[str, Any]):
+    go = _plotly_go()
+    study = _mapping(stock.get("tail_risk_backtesting_study"))
+    rows = _rows(study.get("rolling_exception_rows_95"))
+    figure = go.Figure()
+    if rows:
+        figure.add_trace(go.Scatter(
+            x=[row.get("timestamp") for row in rows],
+            y=[row.get("loss") for row in rows],
+            mode="lines",
+            name="Loss L=-R",
+            line=dict(color="#6b7b8b", width=1),
+            hovertemplate="Date=%{x}<br>Loss=%{y:.2%}<extra></extra>",
+        ))
+        figure.add_trace(go.Scatter(
+            x=[row.get("timestamp") for row in rows],
+            y=[row.get("rolling_historical_var") for row in rows],
+            mode="lines",
+            name="Rolling VaR 95%",
+            line=dict(color="#f2d27a", width=2),
+            hovertemplate="Date=%{x}<br>VaR=%{y:.2%}<extra></extra>",
+        ))
+        exceptions = [row for row in rows if row.get("exception")]
+        if exceptions:
+            figure.add_trace(go.Scatter(
+                x=[row.get("timestamp") for row in exceptions],
+                y=[row.get("loss") for row in exceptions],
+                mode="markers",
+                name="VaR exception",
+                marker=dict(color="#d66a4a", size=7),
+                hovertemplate="Date=%{x}<br>Exception loss=%{y:.2%}<extra></extra>",
+            ))
+    level = _mapping(_mapping(study.get("levels")).get("alpha_95"))
+    kupiec = _mapping(level.get("kupiec_pof"))
+    _add_annotation(
+        figure,
+        "GRAFICA X: VaR exceptions rolling 95%. "
+        "Variables: L_t=-R_t; exception I_t=1 si L_t > VaR_{0.95,t}. "
+        "Obtencion: VaR historico rolling de 252 sesiones calculado solo con datos previos. "
+        f"Excepciones: {level.get('exceptions', 'N/A')} vs esperadas "
+        f"{_num(level.get('expected_exceptions'))}; Kupiec p={_num(kupiec.get('p_value'))}. "
+        "Interpretacion: excepciones agrupadas o excesivas senalan mala calibracion de cola.",
+    )
+    _apply_layout(
+        figure,
+        stock,
+        "VaR exceptions backtest",
+        "Date",
+        "Positive loss / VaR (%)",
+        "Rolling historical VaR, alpha=95%, positive-loss convention.",
+    )
+    return figure
+
+
 def _monte_carlo_paths_figure(stock: dict[str, Any]):
     go = _plotly_go()
     paths = _rows(_normal_mc(stock).get("paths_sample"))
     figure = go.Figure()
+    currency = _currency(stock)
+    path_count = _mc_path_count(stock)
     for path_id in sorted({row.get("path_id") for row in paths})[:25]:
         path_rows = [row for row in paths if row.get("path_id") == path_id]
         figure.add_trace(go.Scatter(
@@ -389,14 +506,20 @@ def _monte_carlo_paths_figure(stock: dict[str, Any]):
         "GRAFICA L: Simulacion Monte Carlo - trayectorias. "
         "Variables: S_t = S_0 * exp((mu - 0.5*sigma^2)*t + sigma*W_t), "
         "donde W_t ~ N(0, t) es un proceso de Wiener. "
-        "Obtencion: 1000 simulaciones bajo GBM (Geometric Brownian Motion). "
+        f"Obtencion: {_count(path_count)} simulaciones bajo GBM (Geometric Brownian Motion). "
         f"Probabilidad de perdida: {_pct(loss_p)}. "
         "Cada linea es una trayectoria simulada. La dispersion muestra "
         "la incertidumbre inherente al modelo estocastico.")
-    _apply_layout(figure, stock, "Simulacion Monte Carlo: trayectorias posibles",
-                  "Dia de simulacion (252 sesiones = 1 ano)", "Valor de la inversion (EUR)",
-                  "Parametric normal paths. 25 trayectorias mostradas de 1000 simuladas. "
-                  "No constituye prediccion.")
+    _apply_layout(
+        figure,
+        stock,
+        "Simulacion Monte Carlo: trayectorias posibles",
+        "Dia de simulacion (252 sesiones = 1 ano)",
+        f"Valor de la inversion ({currency})",
+        "Parametric normal paths. 25 trayectorias mostradas de "
+        f"{_count(path_count)} simuladas. "
+        "No constituye prediccion.",
+    )
     return figure
 
 
@@ -404,6 +527,7 @@ def _monte_carlo_percentiles_figure(stock: dict[str, Any]):
     go = _plotly_go()
     rows = _rows(_normal_mc(stock).get("fan_chart"))
     figure = go.Figure()
+    currency = _currency(stock)
     colors = {
         "p5": "#d66a4a", "p25": "#d6b35a", "p50": "#f2d27a",
         "p75": "#3dd6c6", "p95": "#3dd6c6",
@@ -429,7 +553,7 @@ def _monte_carlo_percentiles_figure(stock: dict[str, Any]):
         "El intervalo P5-P95 contiene el 90% de los resultados simulados. "
         "Interpretacion: la dispersion entre P5 y P95 mide la incertidumbre.")
     _apply_layout(figure, stock, "Monte Carlo: percentiles de rentabilidad",
-                  "Dia de simulacion", "Valor de la inversion (EUR)",
+                  "Dia de simulacion", f"Valor de la inversion ({currency})",
                   "Fan chart con percentiles 5, 25, 50, 75, 95. "
                   "La mediana (P50) es el resultado central esperado.")
     return figure
@@ -439,6 +563,7 @@ def _monte_carlo_terminal_figure(stock: dict[str, Any]):
     go = _plotly_go()
     values = _normal_mc(stock).get("terminal_distribution", [])
     figure = go.Figure()
+    path_count = _mc_path_count(stock)
     if isinstance(values, list):
         filtered = [v for v in values if v is not None]
         mean_v = sum(filtered) / len(filtered) if filtered else 0
@@ -450,14 +575,14 @@ def _monte_carlo_terminal_figure(stock: dict[str, Any]):
     _add_annotation(figure,
         "GRAFICA N: Monte Carlo - distribucion terminal. "
         "Variables: S_T al final del horizonte T=252 dias. "
-        "Obtencion: histograma de los valores finales de 1000 simulaciones GBM. "
+        f"Obtencion: histograma de los valores finales de {_count(path_count)} simulaciones GBM. "
         f"Mediana: {_pct(mc.get('terminal_median'))} | "
         f"Prob. perdida: {_pct(mc.get('probability_of_loss'))}. "
         "Interpretacion: permite visualizar la probabilidad de resultados negativos. "
         "Una distribucion asimetrica a la derecha indica mayor potencial de ganancia.")
     _apply_layout(figure, stock, "Monte Carlo: distribucion terminal",
                   "Rentabilidad terminal (%)", "Frecuencia",
-                  "Histograma de 1000 simulaciones. La linea roja marca la media.")
+                  f"Histograma de {_count(path_count)} simulaciones. La linea roja marca la media.")
     return figure
 
 
@@ -465,6 +590,7 @@ def _backtest_equity_figure(stock: dict[str, Any]):
     go = _plotly_go()
     backtests = _mapping(stock.get("backtesting_results"))
     figure = go.Figure()
+    currency = _currency(stock)
     colors = ["#3dd6c6", "#f2d27a", "#d66a4a", "#6b7b8b", "#d6b35a"]
     for idx, (name, payload) in enumerate(backtests.items()):
         rows = _rows(_mapping(payload).get("equity_curve"))
@@ -479,15 +605,55 @@ def _backtest_equity_figure(stock: dict[str, Any]):
     bh = _mapping(backtests.get("buy_and_hold"))
     _add_annotation(figure,
         "GRAFICA O: Backtesting - curvas de capital. "
-        "Variables: V_t = V_0 * prod_{s<=t}(1+R_s*signal_s), V_0=10000 EUR. "
+        f"Variables: V_t = V_0 * prod_{{s<=t}}(1+R_s*signal_s), V_0=10000 {currency}. "
         "Obtencion: simulacion historica con ejecucion en t+1 (sin look-ahead). "
-        f"Buy-and-Hold equity final: {_num(bh.get('metrics', {}).get('final_equity'))} EUR. "
+        f"Buy-and-Hold equity final: {_num(bh.get('metrics', {}).get('final_equity'))} {currency}. "
         "Interpretacion: compara el desempeno historico de distintas estrategias. "
         "Buy-and-hold es la referencia pasiva. No modela costes de transaccion.")
     _apply_layout(figure, stock, "Backtesting: curvas de capital",
-                  "Date", "Capital ficticio (EUR)",
+                  "Date", f"Capital ficticio ({currency})",
                   "Simulacion historica sin ejecucion real. "
                   "Buy-and-hold es la referencia pasiva.")
+    return figure
+
+
+def _execution_costs_figure(stock: dict[str, Any]):
+    go = _plotly_go()
+    study = _mapping(stock.get("execution_cost_study"))
+    rows = _rows(study.get("scenario_rows"))
+    figure = go.Figure()
+    if rows:
+        labels = [_pct(row.get("participation_rate_of_adv")) for row in rows]
+        figure.add_trace(go.Bar(
+            x=labels,
+            y=[row.get("assumed_half_spread_bps") for row in rows],
+            name="Half spread bps",
+            marker_color="#d6b35a",
+        ))
+        figure.add_trace(go.Bar(
+            x=labels,
+            y=[row.get("square_root_impact_bps") for row in rows],
+            name="Impact bps",
+            marker_color="#d66a4a",
+        ))
+        figure.update_layout(barmode="stack")
+    _add_annotation(
+        figure,
+        "GRAFICA Y: Escenarios de costes de ejecucion. "
+        "Variables: participation = notional/ADV; total cost bps = half-spread + impact. "
+        "Impact proxy: k * sigma_ann * sqrt(participation) * 10000. "
+        f"ADV monetario 20d: {_num(study.get('average_daily_dollar_volume_20d'))}. "
+        "Interpretacion: mayor participacion aumenta slippage estimado. "
+        "No es orden, sizing, recomendacion ni modelo calibrado con fills reales.",
+    )
+    _apply_layout(
+        figure,
+        stock,
+        "Execution cost scenarios",
+        "Participation of ADV",
+        "One-way cost (bps)",
+        "Hypothetical daily ADV scenarios; no broker or live execution data.",
+    )
     return figure
 
 
@@ -496,6 +662,7 @@ def _options_payoff_figure(stock: dict[str, Any]):
     options = _mapping(stock.get("options_theoretical_analytics"))
     rows = _rows(options.get("payoff_profile"))
     figure = go.Figure()
+    currency = _currency(stock)
     if rows:
         figure.add_trace(go.Scatter(
             x=[row.get("underlying_price") for row in rows],
@@ -512,7 +679,7 @@ def _options_payoff_figure(stock: dict[str, Any]):
         "Interpretacion: el payoff teorico muestra la ganancia/maxima perdida "
         "para cada nivel del subyacente. No representa precios de mercado reales.")
     _apply_layout(figure, stock, "Perfil de pago de opcion (Options Payoff)",
-                  "Precio del subyacente (USD)", "Payoff (EUR)",
+                  f"Precio del subyacente ({currency})", f"Payoff ({currency})",
                   "PARAMETRIC_EDUCATIONAL_MODEL. Sin option chain real.")
     return figure
 
@@ -751,6 +918,23 @@ def _mapping(value: object) -> dict[str, Any]:
 
 def _normal_mc(stock: dict[str, Any]) -> dict[str, Any]:
     return _mapping(_mapping(stock.get("monte_carlo")).get("parametric_normal"))
+
+
+def _currency(stock: dict[str, Any]) -> str:
+    return str(_mapping(stock.get("data_used")).get("currency", "moneda base"))
+
+
+def _mc_path_count(stock: dict[str, Any]) -> int | None:
+    value = _normal_mc(stock).get("path_count")
+    try:
+        clean = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return int(clean) if clean == clean else None
+
+
+def _count(value: int | None) -> str:
+    return "N/A" if value is None else f"{value:,}"
 
 
 def _model_note(stock: dict[str, Any]) -> str:

@@ -124,6 +124,14 @@ def classify_report(payload: dict[str, Any]) -> str:
         return "provider_comparison"
     if payload.get("report_type") == "professional_quant_terminal":
         return "professional_quant_terminal"
+    if payload.get("report_type") == "institutional_state_of_art_quant_study":
+        return "institutional_study"
+    if payload.get("report_type") == "institutional_quant_study_metadata":
+        return "institutional_study_metadata"
+    if payload.get("report_type") == "final_institutional_quant_finance_paper_metadata":
+        return "final_academic_paper"
+    if payload.get("report_type") == "final_institutional_quant_package_metadata":
+        return "final_institutional_package"
     if payload.get("report_type") == "academic_stock_report_metadata":
         return "academic_stock_report"
     if "coverage_by_asset" in payload and "suitable_for_backtest_demo" in payload:
@@ -174,6 +182,40 @@ def summarize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "benchmark": universe.get("benchmark"),
             "data_mode": data.get("mode"),
             "warnings": len(data.get("warnings", [])) if isinstance(data, dict) else 0,
+        }
+    if report_type == "institutional_study":
+        source = payload.get("source_terminal_report", {})
+        tables = payload.get("tables", {})
+        findings = tables.get("critical_findings", []) if isinstance(tables, dict) else []
+        return {
+            "data_mode": source.get("data_mode") if isinstance(source, dict) else None,
+            "warnings": len(source.get("warnings", [])) if isinstance(source, dict) else 0,
+            "critical_findings": len(findings) if isinstance(findings, list) else 0,
+            "research_only": payload.get("research_only", True),
+        }
+    if report_type == "institutional_study_metadata":
+        outputs = payload.get("outputs", {})
+        return {
+            "study_path": outputs.get("json") if isinstance(outputs, dict) else None,
+            "markdown_path": outputs.get("markdown") if isinstance(outputs, dict) else None,
+            "critical_findings": payload.get("critical_findings_count"),
+            "research_only": payload.get("research_only", True),
+        }
+    if report_type == "final_academic_paper":
+        outputs = payload.get("outputs", {})
+        return {
+            "markdown_path": outputs.get("markdown") if isinstance(outputs, dict) else None,
+            "html_path": outputs.get("html") if isinstance(outputs, dict) else None,
+            "pdf_path": outputs.get("pdf") if isinstance(outputs, dict) else None,
+            "research_only": payload.get("research_only", True),
+        }
+    if report_type == "final_institutional_package":
+        outputs = payload.get("outputs", {})
+        return {
+            "data_mode": payload.get("data_mode"),
+            "warnings": len(payload.get("warnings", [])),
+            "research_only": payload.get("research_only", True),
+            "has_final_paper": "final_paper" in outputs if isinstance(outputs, dict) else False,
         }
     if report_type == "academic_stock_report":
         outputs = payload.get("outputs", {})

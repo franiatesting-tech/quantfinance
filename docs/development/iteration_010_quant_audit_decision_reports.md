@@ -10,7 +10,7 @@ This iteration audited and corrected the professional quant terminal before expa
 - `ml_forecasting.py` with walk-forward validation and baselines.
 - `decision_engine.py` with research-only quantitative decision signal.
 - Corrected GBM drift, VaR MC horizon, put-call parity with dividends and Pearson kurtosis.
-- Academic report section model updated to 24 required sections.
+- Academic report section model updated to 25 required sections.
 - `pdf_export.py` with WeasyPrint/Pandoc fallback status.
 - One-page Streamlit `Stock Research Terminal`.
 

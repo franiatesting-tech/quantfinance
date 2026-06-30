@@ -9,6 +9,8 @@ from quant_platform.ui.view_models import (
     build_provider_rows,
     conceptual_flow_steps,
     dataset_quality_rows,
+    final_package_artifacts,
+    institutional_table,
     load_risk_profile_summary,
     load_universe_summary,
     report_series,
@@ -102,3 +104,19 @@ def test_conceptual_flow_and_report_helpers() -> None:
     assert flow[0]["block"] == "Providers"
     assert report_series(report, "equity_curve") == report["equity_curve"]
     assert transaction_cost_components(report) == {"total_transaction_cost": 12.5}
+
+
+def test_final_package_artifacts_and_institutional_table_helpers() -> None:
+    reports = [
+        {"report_type": "professional_quant_terminal", "modified_at": "1", "path": "terminal.json"},
+        {"report_type": "final_academic_paper", "modified_at": "2", "path": "old.json"},
+        {"report_type": "final_academic_paper", "modified_at": "3", "path": "new.json"},
+    ]
+    study = {"tables": {"asset_metrics": [{"asset_id": "AAPL"}, "bad-row"]}}
+
+    artifacts = final_package_artifacts(reports)
+
+    assert artifacts["paper"]["path"] == "new.json"
+    assert artifacts["terminal"]["path"] == "terminal.json"
+    assert institutional_table(study, "asset_metrics") == [{"asset_id": "AAPL"}]
+    assert institutional_table(study, "missing") == []

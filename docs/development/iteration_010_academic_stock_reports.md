@@ -21,7 +21,7 @@ Generate a rigorous, visual, two-level academic report for each stock in the pro
 
 ```powershell
 py -3 -m quant_platform.cli build-quant-terminal-report --config configs/quant_terminal_3_stocks.yaml
-py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --include-figures --overwrite
+py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/10stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --include-figures --overwrite
 ```
 
 ## Safety
@@ -34,7 +34,7 @@ py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-repor
 
 ## PDF Status
 
-PDF export is not part of this iteration. Markdown and HTML are the supported outputs.
+The first academic-stock report pass supported Markdown and HTML. The later quant-audit/reporting pass added best-effort PDF export with local renderers; Markdown and HTML remain the canonical printable outputs when no renderer is available.
 
 ## Validation Snapshot
 

@@ -5,7 +5,7 @@ Iteration 010 adds a document-generation layer on top of the professional quant 
 ## Flow
 
 ```text
-3stocks_10y_report.json
+10stocks_10y_report.json
   -> build_stock_academic_report_model(full_report, asset_id)
   -> deterministic conclusions
   -> Plotly academic figures
@@ -18,7 +18,7 @@ Iteration 010 adds a document-generation layer on top of the professional quant 
 
 ## Inputs
 
-- Base report: `reports/generated/quant_terminal/3stocks_10y_report.json`.
+- Base report: `reports/generated/quant_terminal/10stocks_10y_report.json`.
 - Required stock payload: `stocks.<asset_id>`.
 - Required fields: data provenance, OHLCV summary, price/volume/return/drawdown/rolling series, performance metrics, CAPM metrics, VaR/ES, Monte Carlo, backtesting, options analytics, warnings, and bibliography references.
 
@@ -39,32 +39,33 @@ Generated outputs are ignored by Git.
 
 ## Document Structure
 
-Each report has 24 sections:
+Each report has 25 sections:
 
 1. Portada.
 2. Executive Summary.
 3. Plain-English Summary.
 4. Research Question.
-5. Data & Provenance.
-6. Data Quality Review.
-7. Price Dynamics.
-8. Return Construction.
-9. Performance Metrics.
-10. CAPM Metrics.
-11. Value at Risk Analysis.
-12. Monte Carlo Simulation.
-13. ML Forecasting Assessment.
-14. Backtesting Analysis.
-15. Options Analytics.
-16. Comparison Against Benchmark.
-17. Quantitative Decision Signal.
-18. Statistical Interpretation.
-19. Model Performance Assessment.
-20. Stock-Specific Conclusions.
-21. Limitations.
-22. Reproducibility.
-23. Mathematical Appendix.
-24. Bibliography & Method Traceability.
+5. Literature-Driven Research Design.
+6. Data & Provenance.
+7. Data Quality Review.
+8. Price Dynamics.
+9. Return Construction.
+10. Performance Metrics.
+11. CAPM Metrics.
+12. Value at Risk Analysis.
+13. Monte Carlo Simulation.
+14. ML Forecasting Assessment.
+15. Backtesting Analysis.
+16. Options Analytics.
+17. Comparison Against Benchmark.
+18. Quantitative Decision Signal.
+19. Statistical Interpretation.
+20. Model Performance Assessment.
+21. Stock-Specific Conclusions.
+22. Limitations.
+23. Reproducibility.
+24. Mathematical Appendix.
+25. Bibliography & Method Traceability.
 
 Each section includes a plain-language explanation, technical explanation, parameters/data used, formulas where relevant, figures where relevant, conclusions, and limitations.
 
@@ -86,4 +87,4 @@ Conclusions are deterministic rules in `academic_conclusions.py`; no LLM is used
 
 ## PDF
 
-PDF export is implemented as a best-effort local renderer. The platform first tries WeasyPrint, then Pandoc. If neither is available, report generation still succeeds with Markdown/HTML and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.
+PDF export is implemented as a best-effort local renderer. The platform tries WeasyPrint, Playwright Chromium, then Pandoc. If no renderer is available, report generation still succeeds with Markdown/HTML and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.

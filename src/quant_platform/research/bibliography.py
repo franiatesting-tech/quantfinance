@@ -34,6 +34,21 @@ def method_catalog() -> list[dict[str, Any]]:
             "Journal of Portfolio Management, 40(5), 94-107. DOI: 10.2139/ssrn.2460551",
             "DOI_VERIFIED",
         ),
+        _row(
+            "Sharpe Inference",
+            "Sampling distribution and serial-correlation caveats for Sharpe ratios",
+            "Lo, A.W. (2002). The Statistics of Sharpe Ratios. Financial Analysts Journal, "
+            "58(4), 36-52. DOI: 10.2469/faj.v58.n4.2453",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Multiple Testing",
+            "Backtest overfitting and multiple-testing adjustment",
+            "Harvey, C.R., Liu, Y., & Zhu, H. (2016). ... and the Cross-Section of "
+            "Expected Returns. Review of Financial Studies, 29(1), 5-68. "
+            "DOI: 10.1093/rfs/hhv059",
+            "DOI_VERIFIED",
+        ),
         # --- CAPM ---
         _row(
             "CAPM",
@@ -42,6 +57,28 @@ def method_catalog() -> list[dict[str, Any]]:
             "Jensen, M.C. (1968). The Performance of Mutual Funds. "
             "Journal of Finance, 23(2), 389-416.",
             "TEXTBOOK",
+        ),
+        _row(
+            "Factor Models",
+            "Fama-French three-factor benchmark",
+            "Fama, E.F. & French, K.R. (1993). Common Risk Factors in the Returns on "
+            "Stocks and Bonds. Journal of Financial Economics, 33(1), 3-56. "
+            "DOI: 10.1016/0304-405X(93)90023-5",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Factor Models",
+            "Carhart momentum factor benchmark",
+            "Carhart, M.M. (1997). On Persistence in Mutual Fund Performance. "
+            "Journal of Finance, 52(1), 57-82. DOI: 10.1111/j.1540-6261.1997.tb03808.x",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Factor Models",
+            "Fama-French five-factor benchmark",
+            "Fama, E.F. & French, K.R. (2015). A Five-Factor Asset Pricing Model. "
+            "Journal of Financial Economics, 116(1), 1-22. DOI: 10.1016/j.jfineco.2014.10.010",
+            "DOI_VERIFIED",
         ),
         # --- Portfolio ---
         _row(
@@ -63,6 +100,29 @@ def method_catalog() -> list[dict[str, Any]]:
             "Conditional VaR (CVaR)",
             "Acerbi, C. & Tasche, D. (2002). On the Coherence of Expected Shortfall. "
             "Journal of Banking & Finance, 26(7), 1487-1503. DOI: 10.1016/S0378-4266(02)00013-1",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Coherent Risk Measures",
+            "Axioms for coherent measures of risk",
+            "Artzner, P., Delbaen, F., Eber, J.M., & Heath, D. (1999). Coherent "
+            "Measures of Risk. Mathematical Finance, 9(3), 203-228. "
+            "DOI: 10.1111/1467-9965.00068",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "VaR Backtesting",
+            "Kupiec proportion-of-failures test",
+            "Kupiec, P.H. (1995). Techniques for Verifying the Accuracy of Risk "
+            "Measurement Models. Journal of Derivatives, 3(2), 73-84. "
+            "DOI: 10.3905/jod.1995.407942",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "VaR Backtesting",
+            "Conditional coverage and independence of VaR exceptions",
+            "Christoffersen, P.F. (1998). Evaluating Interval Forecasts. "
+            "International Economic Review, 39(4), 841-862. DOI: 10.2307/2527341",
             "DOI_VERIFIED",
         ),
         # --- Monte Carlo ---
@@ -171,6 +231,28 @@ def method_catalog() -> list[dict[str, Any]]:
             "DOI_VERIFIED",
         ),
         _row(
+            "Range Volatility",
+            "Daily high-low range volatility estimator",
+            "Parkinson, M. (1980). The Extreme Value Method for Estimating the Variance "
+            "of the Rate of Return. Journal of Business, 53(1), 61-65. DOI: 10.1086/296071",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Range Volatility",
+            "Open-high-low-close volatility estimator",
+            "Garman, M.B. & Klass, M.J. (1980). On the Estimation of Security Price "
+            "Volatilities from Historical Data. Journal of Business, 53(1), 67-78. "
+            "DOI: 10.1086/296072",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Range Volatility",
+            "Drift-independent range volatility estimator",
+            "Rogers, L.C.G. & Satchell, S.E. (1991). Estimating Variance from High, "
+            "Low and Closing Prices. Annals of Applied Probability, 1(4), 504-512.",
+            "TEXTBOOK",
+        ),
+        _row(
             "Feature Engineering",
             "94 stock characteristics for ML",
             "Gu, S., Kelly, B., & Xiu, D. (2020). Empirical Asset Pricing via Machine Learning. "
@@ -190,6 +272,33 @@ def method_catalog() -> list[dict[str, Any]]:
             "Zhao, P., Zhu, H., Ng, W.S.H., & Lee, D.L. (2024). From GARCH to Neural Network "
             "for Volatility Forecast. Proceedings of AAAI 2024, 38(15). "
             "DOI: 10.1609/aaai.v38i15.29643",
+            "DOI_VERIFIED",
+        ),
+        _row(
+            "Deep Asset Pricing",
+            "No-arbitrage deep learning asset-pricing benchmark",
+            "Chen, L., Pelger, M., & Zhu, J. (2024). Deep Learning in Asset Pricing. "
+            "Management Science.",
+            "PENDING",
+        ),
+        _row(
+            "Meta-Labeling",
+            "Triple-barrier labels and meta-labeling workflow",
+            "Lopez de Prado, M. (2018). Advances in Financial Machine Learning. Wiley.",
+            "TEXTBOOK",
+        ),
+        _row(
+            "Execution Costs",
+            "Optimal execution with temporary and permanent impact",
+            "Almgren, R. & Chriss, N. (2001). Optimal Execution of Portfolio Transactions. "
+            "Journal of Risk, 3(2), 5-39.",
+            "TEXTBOOK",
+        ),
+        _row(
+            "Market Impact",
+            "No-dynamic-arbitrage constraints for market impact models",
+            "Gatheral, J. (2010). No-Dynamic-Arbitrage and Market Impact. Quantitative "
+            "Finance, 10(7), 749-759. DOI: 10.1080/14697680903373692",
             "DOI_VERIFIED",
         ),
     ]

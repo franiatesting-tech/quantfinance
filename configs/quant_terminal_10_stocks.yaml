@@ -2,11 +2,22 @@ selected_stocks:
   - AAPL
   - MSFT
   - NVDA
-fallback_stocks:
   - AMZN
   - GOOGL
   - META
   - JPM
+  - V
+  - LLY
+  - COST
+fallback_stocks:
+  - AVGO
+  - HD
+  - MA
+  - PG
+  - UNH
+  - ORCL
+  - CRM
+  - WMT
 benchmark:
   symbol: "^GSPC"
 risk_free_proxy:
@@ -17,10 +28,10 @@ base_currency: "USD"
 risk_free_rate_annual: 0.0
 monte_carlo:
   horizon_days: 252
-  n_paths: 1000
+  n_paths: 10000
   seed: 42
   block_size: 20
-  max_paths_ui: 100
+  max_paths_ui: 250
 optimization:
   grid_step: 0.05
   max_weight: 1.0
@@ -53,7 +64,7 @@ hedging:
   exposure_value: 1000000
   futures_contract_value: 200000
 exposure:
-  n_paths: 1000
+  n_paths: 10000
   n_steps: 20
   seed: 42
   initial_exposure: 0.0

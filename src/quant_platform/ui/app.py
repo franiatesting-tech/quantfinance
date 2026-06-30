@@ -15,6 +15,8 @@ from quant_platform.ui.view_models import (
     backtest_metric_rows,
     build_platform_snapshot,
     dataset_quality_rows,
+    final_package_artifacts,
+    institutional_table,
     report_series,
     transaction_cost_components,
 )
@@ -65,8 +67,8 @@ def main() -> None:
     import streamlit as st
 
     st.set_page_config(
-        page_title="Stock Research Terminal",
-        page_icon="ST",
+        page_title="Institutional Quant Research Terminal",
+        page_icon="IQ",
         layout="wide",
     )
     _inject_style(st)
@@ -75,11 +77,11 @@ def main() -> None:
         """
         <div class="hero">
           <div>
-            <p class="eyebrow">Research-only equity analytics</p>
-            <h1>Stock Research Terminal</h1>
+            <p class="eyebrow">Research-only institutional quant analytics</p>
+            <h1>Institutional Quant Research Terminal</h1>
             <p class="hero-copy">
-              One-page quantitative view: data, returns, risk, CAPM, VaR/ES,
-              Monte Carlo, ML diagnostics, backtesting, options and academic report links.
+              Reproducible state-of-the-art research package: provenance, returns,
+              portfolio construction, tail risk, ML confidence, robustness gates and final paper.
             </p>
           </div>
           <div class="hero-badge">No trading<br/>No advice</div>
@@ -113,11 +115,13 @@ def main() -> None:
 
     if control_cols[2].button("Regenerate command", use_container_width=True):
         st.code(
-            "py -3 -m quant_platform.cli build-quant-terminal-report "
-            "--config configs/quant_terminal_3_stocks.yaml",
+            "py -3.13 -m quant_platform.cli build-final-institutional-package "
+            "--config configs/quant_terminal_10_stocks.yaml --provider yfinance "
+            "--output-dir reports/generated/final_package --max-table-rows 20",
             language="powershell",
         )
-    _render_stock_research_terminal(st, pd, snapshot, status)
+    if not _render_institutional_terminal(st, pd, snapshot, status):
+        _render_stock_research_terminal(st, pd, snapshot, status)
 
 
 def _render_header(st) -> None:  # noqa: ANN001
@@ -181,6 +185,7 @@ def _render_stock_research_terminal(
     metrics = _mapping(stock.get("metrics"))
     var_hist = _mapping(_mapping(stock.get("var")).get("historical"))
     ml = _mapping(stock.get("ml_forecasting"))
+    predictive_audit = _mapping(stock.get("predictive_reliability_audit"))
     signal = _mapping(stock.get("decision_signal"))
     data_used = _mapping(stock.get("data_used"))
     _kpi_row(
@@ -198,6 +203,7 @@ def _render_stock_research_terminal(
             ("VaR 95", _pct(var_hist.get("var"))),
             ("ES 95", _pct(var_hist.get("expected_shortfall"))),
             ("ML dir. accuracy", _pct(ml.get("directional_accuracy"))),
+            ("Predictive audit", str(predictive_audit.get("rating", "N/A"))),
             ("Decision signal", str(signal.get("signal", "INSUFFICIENT_DATA"))),
         ],
     )
@@ -211,6 +217,11 @@ def _render_stock_research_terminal(
     )
     action_text = signal.get("suggested_research_action", "Review model assumptions.")
     st.info(f"Research-only action classification: {action_text}")
+    st.warning(
+        "Predictive model audit: "
+        f"{predictive_audit.get('rating', 'N/A')} - "
+        f"{predictive_audit.get('interpretation', 'N/A')}"
+    )
 
     chart_cols = st.columns(2)
     chart_cols[0].plotly_chart(
@@ -247,6 +258,11 @@ def _render_stock_research_terminal(
         _safe_df(pd, [_ml_summary_row(ml)]), use_container_width=True, hide_index=True
     )
     ml_cols[1].plotly_chart(_stock_ml_prediction_figure(stock), use_container_width=True)
+    st.dataframe(
+        _safe_df(pd, _predictive_audit_rows(predictive_audit)),
+        use_container_width=True,
+        hide_index=True,
+    )
     mc_cols = st.columns(2)
     mc_cols[0].plotly_chart(_stock_mc_fan_figure(stock), use_container_width=True)
     mc_cols[1].plotly_chart(_stock_backtest_figure(stock), use_container_width=True)
@@ -265,6 +281,188 @@ def _render_stock_research_terminal(
 
     with st.expander("Developer diagnostics"):
         st.json({"ui_status": status, "selected_report": report_row, "selected_stock": asset_id})
+
+
+def _render_institutional_terminal(
+    st, pd, snapshot: dict[str, Any], status: dict[str, Any]
+) -> bool:  # noqa: ANN001
+    artifacts = final_package_artifacts(snapshot["reports"])
+    study_row = artifacts.get("study")
+    package_row = artifacts.get("package")
+    paper_row = artifacts.get("paper")
+    if not study_row and not package_row:
+        return False
+
+    study_path = _institutional_study_path(package_row, study_row, artifacts.get("study_metadata"))
+    if not study_path:
+        _empty_state(
+            st,
+            "Final package metadata exists, but the study JSON path is missing.",
+            _terminal_commands(),
+        )
+        return True
+    study = read_json_report(study_path)
+    source = _mapping(study.get("source_terminal_report"))
+    controls = _mapping(study.get("audit_controls"))
+    findings = institutional_table(study, "critical_findings")
+    decisions = institutional_table(study, "final_research_decision_table")
+
+    st.markdown("### Institutional Research Package")
+    _kpi_row(
+        st,
+        [
+            ("Data mode", str(source.get("data_mode", "unknown"))),
+            ("Strict real data", str(controls.get("strict_real_data", "unknown"))),
+            ("Synthetic rejected", str(controls.get("synthetic_rejected", "unknown"))),
+            ("Warnings", str(len(source.get("warnings", [])))),
+            ("Critical findings", str(len(findings))),
+            ("Assets", str(len(institutional_table(study, "asset_metrics")))),
+        ],
+    )
+    st.info(
+        "Terminal read-only: state-of-the-art research controls, no broker order generation, "
+        "no investment advice."
+    )
+
+    tabs = st.tabs(
+        [
+            "Overview",
+            "Asset Results",
+            "Portfolio",
+            "Tail Risk",
+            "ML Confidence",
+            "Robustness",
+            "Decision Gates",
+            "Final Paper",
+            "Methodology",
+        ]
+    )
+    with tabs[0]:
+        st.write(study.get("plain_language_explanation", "No executive summary available."))
+        st.dataframe(_safe_df(pd, findings), use_container_width=True, hide_index=True)
+    with tabs[1]:
+        _render_study_table(st, pd, study, "asset_metrics")
+        st.dataframe(_safe_df(pd, decisions), use_container_width=True, hide_index=True)
+    with tabs[2]:
+        for name in ("portfolio_weights", "portfolio_diagnostics", "frontier_sample"):
+            _render_study_table(st, pd, study, name)
+    with tabs[3]:
+        for name in (
+            "tail_risk",
+            "portfolio_tail_risk",
+            "tail_risk_backtesting",
+            "var_exception_table",
+        ):
+            _render_study_table(st, pd, study, name)
+    with tabs[4]:
+        for name in ("ml_audit", "model_confidence", "multiple_testing_adjustments"):
+            _render_study_table(st, pd, study, name)
+    with tabs[5]:
+        for name in (
+            "covariance_shrinkage_comparison",
+            "portfolio_robustness",
+            "execution_cost_sensitivity",
+            "factor_model_gap_table",
+        ):
+            _render_study_table(st, pd, study, name)
+    with tabs[6]:
+        for name in (
+            "decision_gate_evidence",
+            "final_research_decision_table",
+            "implementation_roadmap_table",
+        ):
+            _render_study_table(st, pd, study, name)
+    with tabs[7]:
+        _render_final_paper_links(st, package_row, paper_row)
+    with tabs[8]:
+        for name in (
+            "data_provenance",
+            "method_traceability",
+            "state_of_art_gap_analysis",
+            "glossary",
+        ):
+            _render_study_table(st, pd, study, name)
+
+    with st.expander("Developer diagnostics"):
+        st.json(
+            {
+                "ui_status": status,
+                "package": package_row,
+                "paper": paper_row,
+                "study_path": study_path,
+            }
+        )
+    return True
+
+
+def _render_study_table(st, pd, study: dict[str, Any], name: str) -> None:  # noqa: ANN001
+    st.markdown(f"#### {name}")
+    st.dataframe(
+        _safe_df(pd, institutional_table(study, name)),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
+def _institutional_study_path(
+    package_row: dict[str, Any] | None,
+    study_row: dict[str, Any] | None,
+    study_metadata_row: dict[str, Any] | None,
+) -> str | None:
+    if study_row:
+        return str(study_row.get("path"))
+    for row in (package_row, study_metadata_row):
+        if not row:
+            continue
+        metadata = read_json_report(row["path"])
+        outputs = _mapping(metadata.get("outputs"))
+        institutional_outputs = _mapping(outputs.get("institutional_study"))
+        path = institutional_outputs.get("json") or outputs.get("json")
+        if path:
+            return str(path)
+    return None
+
+
+def _render_final_paper_links(
+    st, package_row: dict[str, Any] | None, paper_row: dict[str, Any] | None
+) -> None:  # noqa: ANN001
+    from pathlib import Path
+
+    metadata = None
+    if paper_row:
+        metadata = read_json_report(paper_row["path"])
+    elif package_row:
+        package = read_json_report(package_row["path"])
+        outputs = _mapping(package.get("outputs"))
+        paper_outputs = _mapping(outputs.get("final_paper"))
+        metadata = {"outputs": paper_outputs, "pdf_export": {}}
+    if not metadata:
+        st.info("No final academic paper metadata found yet.")
+        return
+    outputs = _mapping(metadata.get("outputs"))
+    st.markdown(
+        "<div class='paper-card'>Final institutional paper artifacts</div>",
+        unsafe_allow_html=True,
+    )
+    st.write(f"Markdown: `{outputs.get('markdown', 'not generated')}`")
+    st.write(f"HTML: `{outputs.get('html', 'not generated')}`")
+    pdf_path = outputs.get("pdf")
+    if not pdf_path:
+        st.warning(_mapping(metadata.get("pdf_export")).get("status", "PDF not generated"))
+        st.code("py -3.13 -m pip install '.[pdf]'", language="powershell")
+        st.code("py -3.13 -m playwright install chromium", language="powershell")
+        return
+    pdf_file = Path(str(pdf_path))
+    if not pdf_file.exists():
+        st.warning(f"PDF metadata exists but file is missing: {pdf_file}")
+        return
+    st.download_button(
+        "Download final institutional PDF",
+        data=pdf_file.read_bytes(),
+        file_name=pdf_file.name,
+        mime="application/pdf",
+        use_container_width=True,
+    )
 
 
 def _stock_line_figure(
@@ -433,7 +631,7 @@ def _render_stock_report_links(st, snapshot: dict[str, Any], asset_id: str) -> N
         st.code(
             "py -3 -m quant_platform.cli generate-stock-academic-report "
             f"--asset {asset_id} --terminal-report "
-            "reports/generated/quant_terminal/3stocks_10y_report.json "
+            "reports/generated/quant_terminal/10stocks_10y_report.json "
             "--format md --format html --format pdf --include-figures --overwrite",
             language="powershell",
         )
@@ -472,11 +670,20 @@ def _ml_summary_row(ml: dict[str, Any]) -> dict[str, Any]:
         "status": ml.get("status"),
         "rmse": ml.get("rmse"),
         "mae": ml.get("mae"),
+        "oos_r_squared": ml.get("oos_r_squared"),
         "directional_accuracy": ml.get("directional_accuracy"),
         "baseline_directional_accuracy": ml.get("baseline_directional_accuracy"),
+        "directional_accuracy_edge": ml.get("directional_accuracy_edge_vs_naive"),
         "information_coefficient": ml.get("information_coefficient"),
         "strategy_sharpe": ml.get("strategy_sharpe"),
     }
+
+
+def _predictive_audit_rows(audit: dict[str, Any]) -> list[dict[str, Any]]:
+    criteria = audit.get("criteria", [])
+    if not isinstance(criteria, list):
+        return []
+    return [item for item in criteria if isinstance(item, dict)]
 
 
 def _options_summary_row(options: dict[str, Any]) -> dict[str, Any]:
@@ -1113,11 +1320,11 @@ def _terminal_commands() -> list[str]:
     return [
         (
             "py -3 -m quant_platform.cli build-quant-terminal-report --config "
-            "configs/quant_terminal_3_stocks.yaml"
+            "configs/quant_terminal_10_stocks.yaml"
         ),
         (
             "py -3 -m quant_platform.cli build-quant-terminal-report --config "
-            "configs/quant_terminal_3_stocks.yaml --offline-synthetic"
+            "configs/quant_terminal_10_stocks.yaml --offline-synthetic"
         ),
     ]
 
@@ -1127,13 +1334,13 @@ def _academic_report_commands(asset: str = "AAPL") -> list[str]:
         (
             "py -3 -m quant_platform.cli generate-stock-academic-report "
             f"--asset {asset} --terminal-report "
-            "reports/generated/quant_terminal/3stocks_10y_report.json "
+            "reports/generated/quant_terminal/10stocks_10y_report.json "
             "--output-dir reports/generated/academic_stock_reports "
             "--format md --format html --include-figures --overwrite"
         ),
         (
             "py -3 -m quant_platform.cli generate-all-stock-academic-reports "
-            "--terminal-report reports/generated/quant_terminal/3stocks_10y_report.json "
+            "--terminal-report reports/generated/quant_terminal/10stocks_10y_report.json "
             "--output-dir reports/generated/academic_stock_reports "
             "--format md --format html --include-figures --overwrite"
         ),

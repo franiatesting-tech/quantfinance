@@ -336,6 +336,39 @@ def transaction_cost_components(report: dict[str, Any]) -> dict[str, float]:
     return {"total_transaction_cost": total}
 
 
+def final_package_artifacts(reports: list[dict[str, Any]]) -> dict[str, dict[str, Any] | None]:
+    """Select the newest final institutional artifacts discovered by the UI."""
+
+    return {
+        "package": _latest_report_of_type(reports, "final_institutional_package"),
+        "paper": _latest_report_of_type(reports, "final_academic_paper"),
+        "study": _latest_report_of_type(reports, "institutional_study"),
+        "study_metadata": _latest_report_of_type(reports, "institutional_study_metadata"),
+        "terminal": _latest_report_of_type(reports, "professional_quant_terminal"),
+    }
+
+
+def institutional_table(study: dict[str, Any], name: str) -> list[dict[str, Any]]:
+    """Return one institutional-study table as display-safe row objects."""
+
+    tables = study.get("tables")
+    if not isinstance(tables, dict):
+        return []
+    rows = tables.get(name, [])
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _latest_report_of_type(
+    reports: list[dict[str, Any]], report_type: str
+) -> dict[str, Any] | None:
+    selected = [row for row in reports if row.get("report_type") == report_type]
+    if not selected:
+        return None
+    return max(selected, key=lambda row: str(row.get("modified_at", "")))
+
+
 def _flow(
     block: str,
     inputs: str,

@@ -36,6 +36,31 @@ def test_register_and_load_dataset_round_trips_market_bars(tmp_path) -> None:  #
     assert list_dataset_versions(tmp_path, "synthetic_equity") == ["v1"]
     assert loaded["asset_id"].tolist() == bars["asset_id"].tolist()
     assert loaded["close"].tolist() == pytest.approx(bars["close"].tolist())
+    assert read_dataset_manifest(tmp_path, "synthetic_equity", "v1").manifest_path.exists()
+
+
+def test_register_dataset_manifest_hash_detects_tampering(tmp_path) -> None:  # noqa: ANN001
+    asset = AssetMetadata("SYN_EQ_001", MarketType.EQUITY, "USD", "synthetic", venue="SIM")
+    bars = generate_synthetic_ohlcv(asset, "2024-01-01", periods=4, seed=33)
+    metadata = DatasetMetadata(
+        dataset_id="synthetic_equity",
+        version="v1",
+        source="synthetic",
+        market_type=MarketType.EQUITY,
+        frequency=Frequency.DAILY,
+        created_at=datetime(2024, 1, 1, tzinfo=UTC),
+    )
+
+    registered = register_dataset(bars, metadata, tmp_path)
+    manifest_text = registered.manifest_path.read_text(encoding="utf-8")
+    assert "data_sha256" in manifest_text
+    registered.data_path.write_text(
+        registered.data_path.read_text(encoding="utf-8").replace("SYN_EQ_001", "SYN_EQ_BAD", 1),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(DatasetRegistryError, match="hash mismatch"):
+        load_dataset(tmp_path, "synthetic_equity", "v1")
 
 
 def test_register_dataset_prevents_overwriting_existing_version(tmp_path) -> None:  # noqa: ANN001

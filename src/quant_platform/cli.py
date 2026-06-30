@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -32,7 +34,15 @@ from quant_platform.reporting.latex_report import (
     write_all_stock_latex_reports,
     write_stock_latex_report,
 )
-from quant_platform.research.report import build_and_write_quant_terminal_report
+from quant_platform.research.asset_dataset import load_quant_terminal_config
+from quant_platform.research.final_academic_paper import generate_final_academic_paper
+from quant_platform.research.institutional_study import write_institutional_study
+from quant_platform.research.report import (
+    build_and_write_quant_terminal_report,
+    build_quant_terminal_report,
+    write_frontier_csv,
+    write_quant_terminal_report,
+)
 from quant_platform.ui.actions import build_ui_status, launch_ui_command
 
 
@@ -108,11 +118,53 @@ def build_parser() -> argparse.ArgumentParser:
     quant_terminal.add_argument("--offline-synthetic", action="store_true")
     quant_terminal.add_argument("--dry-run", action="store_true")
 
+    institutional = subparsers.add_parser("generate-institutional-study")
+    institutional.add_argument(
+        "--terminal-report",
+        default="reports/generated/quant_terminal/10stocks_10y_report.json",
+    )
+    institutional.add_argument("--output-dir", default="reports/generated/institutional_study")
+    institutional.add_argument("--max-table-rows", type=int, default=20)
+    institutional.add_argument("--allow-synthetic", action="store_true")
+
+    build_institutional = subparsers.add_parser("build-institutional-study")
+    build_institutional.add_argument("--config", required=True)
+    build_institutional.add_argument("--report-dir", default="reports/generated/quant_terminal")
+    build_institutional.add_argument(
+        "--export-dir", default="reports/generated/portfolio_optimization"
+    )
+    build_institutional.add_argument(
+        "--output-dir", default="reports/generated/institutional_study"
+    )
+    build_institutional.add_argument("--provider", default="yfinance")
+    build_institutional.add_argument("--max-table-rows", type=int, default=20)
+    build_institutional.add_argument("--offline-synthetic", action="store_true")
+    build_institutional.add_argument("--allow-synthetic", action="store_true")
+    build_institutional.add_argument("--dry-run", action="store_true")
+
+    final_paper = subparsers.add_parser("generate-final-academic-paper")
+    final_paper.add_argument(
+        "--institutional-study",
+        default="reports/generated/institutional_study/institutional_quant_study.json",
+    )
+    final_paper.add_argument("--output-dir", default="reports/generated/final_paper")
+    final_paper.add_argument("--include-figures", action="store_true")
+    final_paper.add_argument("--overwrite", action="store_true")
+
+    final_package = subparsers.add_parser("build-final-institutional-package")
+    final_package.add_argument("--config", required=True)
+    final_package.add_argument("--provider", default="yfinance")
+    final_package.add_argument("--output-dir", default="reports/generated/final_package")
+    final_package.add_argument("--max-table-rows", type=int, default=20)
+    final_package.add_argument("--offline-synthetic", action="store_true")
+    final_package.add_argument("--allow-synthetic", action="store_true")
+    final_package.add_argument("--dry-run", action="store_true")
+
     stock_report = subparsers.add_parser("generate-stock-academic-report")
     stock_report.add_argument("--asset", required=True)
     stock_report.add_argument(
         "--terminal-report",
-        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+        default="reports/generated/quant_terminal/10stocks_10y_report.json",
     )
     stock_report.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
     stock_report.add_argument(
@@ -127,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     all_stock_reports = subparsers.add_parser("generate-all-stock-academic-reports")
     all_stock_reports.add_argument(
         "--terminal-report",
-        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+        default="reports/generated/quant_terminal/10stocks_10y_report.json",
     )
     all_stock_reports.add_argument(
         "--output-dir", default="reports/generated/academic_stock_reports"
@@ -145,7 +197,7 @@ def build_parser() -> argparse.ArgumentParser:
     latex_report.add_argument("--asset", required=True)
     latex_report.add_argument(
         "--terminal-report",
-        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+        default="reports/generated/quant_terminal/10stocks_10y_report.json",
     )
     latex_report.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
     latex_report.add_argument("--no-compile", action="store_true")
@@ -155,7 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
     latex_all = subparsers.add_parser("generate-all-stock-latex-reports")
     latex_all.add_argument(
         "--terminal-report",
-        default="reports/generated/quant_terminal/3stocks_10y_report.json",
+        default="reports/generated/quant_terminal/10stocks_10y_report.json",
     )
     latex_all.add_argument("--output-dir", default="reports/generated/academic_stock_reports")
     latex_all.add_argument("--no-compile", action="store_true")
@@ -321,6 +373,125 @@ def main(argv: list[str] | None = None) -> int:
                 provider_name=args.provider,
                 offline_synthetic=args.offline_synthetic,
             )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "generate-institutional-study":
+        try:
+            terminal_report = _load_terminal_report(args.terminal_report)
+            summary = write_institutional_study(
+                terminal_report,
+                output_dir=args.output_dir,
+                max_table_rows=args.max_table_rows,
+                strict_real_data=not args.allow_synthetic,
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "build-institutional-study":
+        if args.dry_run:
+            print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "config": args.config,
+                        "provider": args.provider,
+                        "offline_synthetic": args.offline_synthetic,
+                        "allow_synthetic": args.allow_synthetic,
+                        "strict_real_data": not args.allow_synthetic,
+                        "network_auto_run": False,
+                        "research_only": True,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        try:
+            config = load_quant_terminal_config(args.config)
+            terminal_report = build_quant_terminal_report(
+                config=config,
+                settings=settings,
+                provider_name=args.provider,
+                offline_synthetic=args.offline_synthetic,
+            )
+            summary = write_institutional_study(
+                terminal_report,
+                output_dir=args.output_dir,
+                max_table_rows=args.max_table_rows,
+                strict_real_data=not args.allow_synthetic,
+            )
+            report_path = write_quant_terminal_report(terminal_report, args.report_dir)
+            frontier_path = write_frontier_csv(terminal_report, args.export_dir)
+            summary["terminal_report_path"] = str(report_path)
+            summary["frontier_csv_path"] = str(frontier_path) if frontier_path is not None else None
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "generate-final-academic-paper":
+        try:
+            summary = generate_final_academic_paper(
+                institutional_study_path=args.institutional_study,
+                output_dir=args.output_dir,
+                include_figures=args.include_figures,
+                overwrite=args.overwrite,
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "build-final-institutional-package":
+        if args.dry_run:
+            print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "config": args.config,
+                        "provider": args.provider,
+                        "output_dir": args.output_dir,
+                        "offline_synthetic": args.offline_synthetic,
+                        "strict_real_data": not args.allow_synthetic,
+                        "network_auto_run": False,
+                        "research_only": True,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        try:
+            summary = _build_final_institutional_package(args, settings)
         except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
             print(
                 json.dumps(
@@ -498,6 +669,90 @@ def _validate_providers(settings, network_smoke: bool) -> dict[str, object]:  # 
             )
     result["smoke_results"] = smoke_results
     return result
+
+
+def _build_final_institutional_package(args, settings) -> dict[str, object]:  # noqa: ANN001
+    output_dir = Path(args.output_dir)
+    terminal_dir = output_dir / "terminal_report"
+    institutional_dir = output_dir / "institutional_study"
+    final_paper_dir = output_dir / "final_paper"
+    root_tables_dir = output_dir / "tables"
+    root_figures_dir = output_dir / "figures"
+    for directory in (
+        terminal_dir,
+        institutional_dir,
+        final_paper_dir,
+        root_tables_dir,
+        root_figures_dir,
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+
+    config = load_quant_terminal_config(args.config)
+    terminal_report = build_quant_terminal_report(
+        config=config,
+        settings=settings,
+        provider_name=args.provider,
+        offline_synthetic=args.offline_synthetic,
+    )
+    data_mode = str(terminal_report.get("data", {}).get("mode", "UNKNOWN"))
+    if not args.allow_synthetic and not data_mode.startswith("provider_"):
+        raise ValueError(f"Final package requires provider data, but mode is {data_mode!r}.")
+
+    terminal_report_path = write_quant_terminal_report(terminal_report, terminal_dir)
+    frontier_path = write_frontier_csv(terminal_report, root_tables_dir)
+    institutional_metadata = write_institutional_study(
+        terminal_report,
+        output_dir=institutional_dir,
+        max_table_rows=args.max_table_rows,
+        strict_real_data=not args.allow_synthetic,
+    )
+    final_paper_metadata = generate_final_academic_paper(
+        institutional_study_path=institutional_dir / "institutional_quant_study.json",
+        output_dir=final_paper_dir,
+        include_figures=True,
+        overwrite=True,
+    )
+    _copy_directory_files(final_paper_dir / "tables", root_tables_dir)
+    _copy_directory_files(final_paper_dir / "figures", root_figures_dir)
+    final_manifest = Path(str(final_paper_metadata.get("reproducibility_manifest")))
+    root_manifest = output_dir / "reproducibility_manifest.json"
+    if final_manifest.exists():
+        shutil.copy2(final_manifest, root_manifest)
+
+    metadata = {
+        "report_type": "final_institutional_quant_package_metadata",
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "research_only": True,
+        "not_investment_advice": True,
+        "data_mode": data_mode,
+        "warnings": terminal_report.get("warnings", []),
+        "outputs": {
+            "terminal_report": str(terminal_report_path),
+            "frontier_csv": str(frontier_path) if frontier_path is not None else None,
+            "institutional_study": institutional_metadata.get("outputs", {}),
+            "final_paper": final_paper_metadata.get("outputs", {}),
+            "root_tables": str(root_tables_dir),
+            "root_figures": str(root_figures_dir),
+            "reproducibility_manifest": str(root_manifest),
+        },
+        "validations": {
+            "synthetic_rejected_by_default": not args.allow_synthetic,
+            "no_broker_order_generated": True,
+            "no_secrets_required": True,
+        },
+    }
+    metadata_path = output_dir / "metadata.json"
+    metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+    metadata["metadata_path"] = str(metadata_path)
+    return metadata
+
+
+def _copy_directory_files(source: Path, target: Path) -> None:
+    if not source.exists():
+        return
+    for path in source.iterdir():
+        if path.is_file():
+            shutil.copy2(path, target / path.name)
 
 
 def _sanitize_error(exc: Exception) -> str:

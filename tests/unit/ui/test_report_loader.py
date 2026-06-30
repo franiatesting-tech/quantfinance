@@ -68,20 +68,44 @@ def test_discover_reports_classifies_backtest_and_profile_reports(tmp_path) -> N
         "outputs": {"md": "AAPL.md", "html": "AAPL.html"},
         "figures": {"price_history": "price_history.html"},
     }
+    final_package = {
+        "report_type": "final_institutional_quant_package_metadata",
+        "outputs": {"final_paper": {"pdf": "paper.pdf"}},
+        "warnings": [],
+    }
+    final_paper = {
+        "report_type": "final_institutional_quant_finance_paper_metadata",
+        "outputs": {"markdown": "paper.md", "html": "paper.html", "pdf": "paper.pdf"},
+    }
+    study_metadata = {
+        "report_type": "institutional_quant_study_metadata",
+        "outputs": {"json": "institutional_quant_study.json"},
+        "critical_findings_count": 2,
+    }
     (report_dir / "backtest.json").write_text(json.dumps(backtest), encoding="utf-8")
     (report_dir / "comparison.json").write_text(json.dumps(comparison), encoding="utf-8")
     (report_dir / "academic.json").write_text(json.dumps(academic), encoding="utf-8")
+    (report_dir / "final_package.json").write_text(json.dumps(final_package), encoding="utf-8")
+    (report_dir / "final_paper.json").write_text(json.dumps(final_paper), encoding="utf-8")
+    (report_dir / "study_metadata.json").write_text(json.dumps(study_metadata), encoding="utf-8")
 
     rows = discover_reports(report_dir)
 
     assert {row["report_type"] for row in rows} == {
         "academic_stock_report",
         "backtest",
+        "final_academic_paper",
+        "final_institutional_package",
+        "institutional_study_metadata",
         "profile_comparison",
     }
     assert classify_report(read_json_report(report_dir / "backtest.json")) == "backtest"
     assert (
         classify_report(read_json_report(report_dir / "academic.json")) == "academic_stock_report"
+    )
+    assert (
+        classify_report(read_json_report(report_dir / "final_package.json"))
+        == "final_institutional_package"
     )
 
 

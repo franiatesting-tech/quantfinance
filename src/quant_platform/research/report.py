@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
+from statistics import NormalDist
 from typing import Any
 
 import numpy as np
@@ -136,6 +138,7 @@ def build_quant_terminal_report(
             provider_metadata["failed_symbols"] = dict(response.failed_symbols)
             if response.failed_symbols:
                 warnings.append("PROVIDER_PARTIAL_SYMBOL_FAILURES")
+            config = _select_available_universe(config, response.data, warnings)
             _validate_required_symbols_available(ohlcv, config)
         except Exception as exc:  # noqa: BLE001 - sanitized fallback for local reproducibility.
             ohlcv = make_synthetic_ohlcv(config)
@@ -216,6 +219,7 @@ def build_quant_terminal_report_from_ohlcv(
     serialized_backtests = {
         name: serialize_backtest_result(result) for name, result in backtests.items()
     }
+    report_slug = _report_slug_from_universe(config.selected_stocks, config.lookback_years)
     stocks = _stocks_section(
         ohlcv=ohlcv,
         prices=asset_prices,
@@ -300,7 +304,7 @@ def build_quant_terminal_report_from_ohlcv(
         "exposure": _exposure_section(config),
         "warnings": sorted(set(data_warnings)),
         "exports": {
-            "frontier_csv": "reports/generated/portfolio_optimization/3stocks_frontier.csv"
+            "frontier_csv": f"reports/generated/portfolio_optimization/{report_slug}_frontier.csv"
         },
         "safety": {
             "no_trading": True,
@@ -325,7 +329,7 @@ def write_quant_terminal_report(
 ) -> Path:
     """Write the terminal JSON report to the ignored generated-report directory."""
 
-    output_path = Path(output_dir) / "3stocks_10y_report.json"
+    output_path = Path(output_dir) / f"{_report_slug(report)}_report.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
     return output_path
@@ -340,7 +344,7 @@ def write_frontier_csv(
     rows = frontier_scatter_rows(report.get("optimization", {}))
     if not rows:
         return None
-    output_path = Path(output_dir) / "3stocks_frontier.csv"
+    output_path = Path(output_dir) / f"{_report_slug(report)}_frontier.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(output_path, index=False)
     return output_path
@@ -354,6 +358,71 @@ def _validate_required_symbols_available(ohlcv: pd.DataFrame, config: QuantTermi
     missing = sorted(required.difference(available))
     if missing:
         raise QuantTerminalReportError(f"Provider data missing required symbols: {missing}")
+
+
+def _select_available_universe(
+    config: QuantTerminalConfig,
+    ohlcv: pd.DataFrame,
+    warnings: list[str],
+) -> QuantTerminalConfig:
+    """Replace failed selected stocks with available configured fallbacks."""
+
+    available = set(ohlcv["asset_id"].astype(str)) if "asset_id" in ohlcv.columns else set()
+    if config.benchmark_symbol not in available:
+        raise QuantTerminalReportError(
+            f"Provider data missing benchmark symbol: {config.benchmark_symbol}"
+        )
+    selected = [symbol for symbol in config.selected_stocks if symbol in available]
+    missing = [symbol for symbol in config.selected_stocks if symbol not in available]
+    if not missing:
+        return config
+    replacements: list[tuple[str, str]] = []
+    for fallback in config.fallback_stocks:
+        if len(selected) >= len(config.selected_stocks):
+            break
+        if fallback in available and fallback not in selected:
+            replacements.append((missing[len(replacements)], fallback))
+            selected.append(fallback)
+    if len(selected) < len(config.selected_stocks):
+        raise QuantTerminalReportError(
+            "Provider data missing required symbols and insufficient fallbacks: "
+            f"missing={missing}, selected_available={selected}"
+        )
+    warnings.append(
+        "PROVIDER_SYMBOL_FALLBACK_USED:"
+        + ",".join(f"{old}->{new}" for old, new in replacements)
+    )
+    return QuantTerminalConfig(
+        selected_stocks=tuple(selected[: len(config.selected_stocks)]),
+        fallback_stocks=config.fallback_stocks,
+        benchmark_symbol=config.benchmark_symbol,
+        risk_free_symbol=config.risk_free_symbol,
+        frequency=config.frequency,
+        lookback_years=config.lookback_years,
+        base_currency=config.base_currency,
+        risk_free_rate_annual=config.risk_free_rate_annual,
+        monte_carlo=config.monte_carlo,
+        optimization=config.optimization,
+        backtesting=config.backtesting,
+        options=config.options,
+        fixed_income=config.fixed_income,
+        rates_derivatives=config.rates_derivatives,
+        hedging=config.hedging,
+        exposure=config.exposure,
+    )
+
+
+def _report_slug(report: dict[str, Any]) -> str:
+    universe = report.get("universe", {})
+    return _report_slug_from_universe(
+        universe.get("selected_stocks", ()),
+        int(universe.get("lookback_years", 0) or 0),
+    )
+
+
+def _report_slug_from_universe(symbols: object, lookback_years: int) -> str:
+    symbol_count = len(tuple(symbols)) if isinstance(symbols, (list, tuple)) else 0
+    return f"{symbol_count}stocks_{lookback_years}y"
 
 
 def _volume_from_ohlcv(ohlcv: pd.DataFrame) -> pd.DataFrame:
@@ -407,6 +476,13 @@ def _stocks_section(
             periodic_rf,
             window=63,
         )
+        stock_ohlcv = ohlcv[ohlcv["asset_id"].astype(str) == str(symbol)].copy()
+        benchmark_relative = _benchmark_relative_study(
+            return_series, benchmark_returns, risk_free_rate
+        )
+        active_cumulative = _active_cumulative_return_series(return_series, benchmark_returns)
+        momentum_liquidity = _momentum_liquidity_study(price_series, return_series, volume_series)
+        range_volatility = _range_volatility_study(stock_ohlcv)
         mc = _stock_monte_carlo_section(
             symbol=symbol,
             returns=return_series,
@@ -420,10 +496,21 @@ def _stocks_section(
             alpha=0.95,
             simulated_returns=_stock_mc_daily_distribution(return_series, config, position),
         )
+        tail_backtesting = _tail_risk_backtesting_study(return_series)
         metrics_summary = _stock_metric_summary(
             return_series, equity_curve, single_assets[str(symbol)]
         )
         backtesting_results = _single_stock_backtest_section(return_series)
+        sharpe_inference = _sharpe_inference_study(
+            return_series,
+            risk_free_rate=risk_free_rate,
+            trial_count=_trial_count_from_ml_config(),
+        )
+        execution_costs = _execution_cost_study(
+            price_series=price_series,
+            volume_series=volume_series,
+            annual_volatility=float(metrics_summary.get("annualized_volatility", 0.0)),
+        )
         options_results = options.get(str(symbol), {})
         ml_results = run_walk_forward_forecast(
             price_series,
@@ -432,6 +519,12 @@ def _stocks_section(
             min_train_size=756,
             max_test_observations=63,
             refit_frequency_days=21,
+        )
+        predictive_reliability = _predictive_reliability_audit(
+            data_mode=data_mode,
+            data_warnings=data_warnings,
+            observations=len(return_series),
+            ml_results=ml_results,
         )
         decision_signal = build_research_decision_signal(
             metrics=metrics_summary,
@@ -466,16 +559,30 @@ def _stocks_section(
             "simple_returns": _series_rows(return_series, "return"),
             "log_returns": _series_rows(log_return_series, "log_return"),
             "cumulative_returns": _series_rows(equity_curve - 1.0, "cumulative_return"),
+            "active_cumulative_returns": _series_rows(
+                active_cumulative, "active_cumulative_return"
+            ),
             "drawdown_series": _series_rows(dd_series, "drawdown"),
             "rolling_volatility": _series_rows(rolling["rolling_volatility"], "rolling_volatility"),
             "rolling_sharpe": _series_rows(rolling["rolling_sharpe"], "rolling_sharpe"),
             "rolling_beta": _series_rows(rolling["rolling_beta"], "rolling_beta"),
+            "rolling_correlation": _series_rows(
+                rolling["rolling_correlation"], "rolling_correlation"
+            ),
             "metrics": metrics_summary,
+            "benchmark_relative_study": benchmark_relative,
+            "momentum_liquidity_study": momentum_liquidity,
+            "range_volatility_study": range_volatility,
+            "sharpe_inference_study": sharpe_inference,
             "var": var_summary,
+            "tail_risk_backtesting_study": tail_backtesting,
             "monte_carlo": mc,
             "ml_forecasting": ml_results,
+            "predictive_reliability_audit": predictive_reliability,
             "decision_signal": decision_signal,
             "backtesting_results": backtesting_results,
+            "execution_cost_study": execution_costs,
+            "literature_implementation_map": _literature_implementation_map(),
             "options_theoretical_analytics": options_results,
             "warnings": sorted(set(data_warnings)),
             "bibliography_references": method_catalog(),
@@ -498,11 +605,530 @@ def _rolling_stock_metrics(
     rolling_cov = aligned_returns.rolling(window).cov(aligned_benchmark)
     rolling_var = aligned_benchmark.rolling(window).var(ddof=1)
     rolling_beta = rolling_cov / rolling_var
+    rolling_corr = aligned_returns.rolling(window).corr(aligned_benchmark)
     return {
         "rolling_volatility": rolling_vol.dropna(),
         "rolling_sharpe": rolling_sharpe.dropna(),
         "rolling_beta": rolling_beta.replace([np.inf, -np.inf], np.nan).dropna(),
+        "rolling_correlation": rolling_corr.replace([np.inf, -np.inf], np.nan).dropna(),
     }
+
+
+def _benchmark_relative_study(
+    returns: pd.Series,
+    benchmark_returns: pd.Series,
+    risk_free_rate: float,
+) -> dict[str, Any]:
+    asset, bench = returns.align(benchmark_returns, join="inner")
+    active = (asset - bench).dropna()
+    periodic_rf = annual_rate_to_periodic(risk_free_rate, 252)
+    excess_asset = asset - periodic_rf
+    excess_bench = bench - periodic_rf
+    tracking_error = float(active.std(ddof=1) * np.sqrt(252)) if len(active) > 1 else float("nan")
+    active_return = float(active.mean() * 252) if len(active) else float("nan")
+    information_ratio = active_return / tracking_error if tracking_error else float("nan")
+    correlation = float(asset.corr(bench)) if len(asset) > 1 else float("nan")
+    downside = bench < 0
+    upside = bench > 0
+    return {
+        "study_name": "Benchmark-relative performance and CAPM diagnostics",
+        "literature": ["FamaFrench1993", "Carhart1997", "FamaFrench2015"],
+        "status": "IMPLEMENTED_WITH_DAILY_BENCHMARK_PROXY",
+        "active_annualized_return": active_return,
+        "tracking_error": tracking_error,
+        "information_ratio": float(information_ratio),
+        "correlation_to_benchmark": correlation,
+        "upside_capture": _capture_ratio(asset, bench, upside),
+        "downside_capture": _capture_ratio(asset, bench, downside),
+        "excess_asset_mean_daily": (
+            float(excess_asset.mean()) if len(excess_asset) else float("nan")
+        ),
+        "excess_benchmark_mean_daily": (
+            float(excess_bench.mean()) if len(excess_bench) else float("nan")
+        ),
+        "limitations": [
+            "CAPM/benchmark-relative metrics are not full Fama-French-Carhart alpha.",
+            "No fundamentals, market-cap history, or point-in-time factor data are used.",
+        ],
+    }
+
+
+def _capture_ratio(asset: pd.Series, benchmark: pd.Series, mask: pd.Series) -> float:
+    selected_asset = asset.loc[mask]
+    selected_benchmark = benchmark.loc[mask]
+    denom = float(selected_benchmark.mean()) if len(selected_benchmark) else 0.0
+    if denom == 0.0 or not np.isfinite(denom):
+        return float("nan")
+    return float(selected_asset.mean() / denom)
+
+
+def _active_cumulative_return_series(returns: pd.Series, benchmark_returns: pd.Series) -> pd.Series:
+    asset, bench = returns.align(benchmark_returns, join="inner")
+    if asset.empty or bench.empty:
+        return pd.Series(dtype=float)
+    asset_wealth = cumulative_returns(asset, initial_value=1.0)
+    benchmark_wealth = cumulative_returns(bench, initial_value=1.0)
+    relative = (asset_wealth / benchmark_wealth) - 1.0
+    return relative.replace([np.inf, -np.inf], np.nan).dropna()
+
+
+def _momentum_liquidity_study(
+    prices: pd.Series,
+    returns: pd.Series,
+    volume: pd.Series,
+) -> dict[str, Any]:
+    clean_prices = prices.astype(float).dropna()
+    clean_volume = volume.astype(float).reindex(clean_prices.index).fillna(0.0)
+    aligned_returns = returns.astype(float).reindex(clean_prices.index).dropna()
+    dollar_volume = clean_prices * clean_volume
+    amihud = (aligned_returns.abs() / dollar_volume.reindex(aligned_returns.index)).replace(
+        [np.inf, -np.inf], np.nan
+    )
+    high_252 = clean_prices.tail(252).max() if len(clean_prices) else float("nan")
+    last_price = clean_prices.iloc[-1] if len(clean_prices) else float("nan")
+    return {
+        "study_name": "OHLCV momentum, trend, and liquidity proxy screen",
+        "literature": [
+            "Carhart1997",
+            "MoskowitzOoiPedersen2012",
+            "EasleyLopezPradoOHara2012VolumeClock",
+        ],
+        "status": "DAILY_OHLCV_PROXY_NOT_FACTOR_ZOO_REPLICATION",
+        "momentum_1m": _period_return(clean_prices, 21),
+        "momentum_3m": _period_return(clean_prices, 63),
+        "momentum_6m": _period_return(clean_prices, 126),
+        "momentum_12m": _period_return(clean_prices, 252),
+        "momentum_12m_skip_1m": _skip_period_return(clean_prices, 252, 21),
+        "distance_to_52w_high": float(last_price / high_252 - 1.0) if high_252 else float("nan"),
+        "average_volume_20d": float(clean_volume.tail(20).mean()),
+        "average_volume_63d": float(clean_volume.tail(63).mean()),
+        "average_dollar_volume_20d": float(dollar_volume.tail(20).mean()),
+        "average_dollar_volume_63d": float(dollar_volume.tail(63).mean()),
+        "amihud_illiq_mean_252d": float(amihud.tail(252).mean()),
+        "limitations": [
+            "Momentum and liquidity are price-volume proxies only.",
+            "No market-cap, book-to-market, profitability, investment, or point-in-time "
+            "fundamentals.",
+        ],
+    }
+
+
+def _period_return(prices: pd.Series, window: int) -> float | None:
+    if len(prices) <= window:
+        return None
+    return float(prices.iloc[-1] / prices.iloc[-window - 1] - 1.0)
+
+
+def _skip_period_return(prices: pd.Series, lookback: int, skip: int) -> float | None:
+    if len(prices) <= lookback:
+        return None
+    end = prices.iloc[-skip - 1]
+    start = prices.iloc[-lookback - 1]
+    return float(end / start - 1.0) if start else None
+
+
+def _range_volatility_study(stock_ohlcv: pd.DataFrame) -> dict[str, Any]:
+    required = {"open", "high", "low", "close"}
+    if stock_ohlcv.empty or required.difference(stock_ohlcv.columns):
+        return {"status": "UNAVAILABLE", "reason": "OHLC columns unavailable."}
+    frame = stock_ohlcv.copy()
+    for column in required:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    frame = frame.dropna(subset=list(required))
+    frame = frame[(frame[list(required)] > 0).all(axis=1)]
+    if frame.empty:
+        return {"status": "UNAVAILABLE", "reason": "No positive OHLC rows."}
+    log_hl = np.log(frame["high"] / frame["low"])
+    log_co = np.log(frame["close"] / frame["open"])
+    log_ho = np.log(frame["high"] / frame["open"])
+    log_hc = np.log(frame["high"] / frame["close"])
+    log_lo = np.log(frame["low"] / frame["open"])
+    log_lc = np.log(frame["low"] / frame["close"])
+    parkinson_var = (log_hl**2) / (4.0 * np.log(2.0))
+    garman_klass_var = 0.5 * log_hl**2 - (2.0 * np.log(2.0) - 1.0) * log_co**2
+    rogers_satchell_var = log_ho * log_hc + log_lo * log_lc
+    return {
+        "study_name": "Daily OHLC range-based volatility estimators",
+        "literature": ["AndersenBollerslevDieboldLabys2003", "Corsi2009HAR"],
+        "status": "DAILY_RANGE_PROXY_NOT_INTRADAY_REALIZED_VOLATILITY",
+        "parkinson_volatility_annual": _annualized_var_mean(parkinson_var),
+        "garman_klass_volatility_annual": _annualized_var_mean(garman_klass_var),
+        "rogers_satchell_volatility_annual": _annualized_var_mean(rogers_satchell_var),
+        "observations": int(len(frame)),
+        "limitations": [
+            "Daily OHLC range estimators are proxies, not intraday realized volatility.",
+            "Microstructure-noise studies require intraday/order-book data and are not replicated.",
+        ],
+    }
+
+
+def _annualized_var_mean(variance_series: pd.Series) -> float:
+    clean = variance_series.replace([np.inf, -np.inf], np.nan).dropna()
+    clean = clean[clean >= 0]
+    if clean.empty:
+        return float("nan")
+    return float(np.sqrt(clean.mean() * 252.0))
+
+
+def _tail_risk_backtesting_study(returns: pd.Series) -> dict[str, Any]:
+    clean = returns.astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+    window = 252
+    if len(clean) <= window + 20:
+        return {
+            "study_name": "VaR exception backtesting",
+            "status": "NOT_SUPPORTED_INSUFFICIENT_ROLLING_HISTORY",
+            "observations": int(len(clean)),
+            "required_observations": window + 20,
+            "loss_sign_convention": "L_t = -R_t; exceptions use L_t > VaR_alpha",
+        }
+    losses = -clean
+    levels = {}
+    exception_rows_95: list[dict[str, Any]] = []
+    for alpha in (0.95, 0.99):
+        var = losses.shift(1).rolling(window).quantile(alpha)
+        aligned = pd.concat([losses.rename("loss"), var.rename("var")], axis=1).dropna()
+        exceptions = (aligned["loss"] > aligned["var"]).astype(int)
+        kupiec = _kupiec_pof_test(int(exceptions.sum()), int(len(exceptions)), 1.0 - alpha)
+        christoffersen = _christoffersen_independence_test(exceptions)
+        cc_lr = None
+        cc_p = None
+        if kupiec.get("lr_stat") is not None and christoffersen.get("lr_stat") is not None:
+            cc_lr = float(kupiec["lr_stat"] + christoffersen["lr_stat"])
+            cc_p = _chi_square_sf(cc_lr, 2)
+        levels[f"alpha_{int(alpha * 100)}"] = {
+            "alpha": float(alpha),
+            "rolling_window_days": window,
+            "observations": int(len(exceptions)),
+            "exceptions": int(exceptions.sum()),
+            "expected_exceptions": float(len(exceptions) * (1.0 - alpha)),
+            "exception_rate": float(exceptions.mean()) if len(exceptions) else None,
+            "kupiec_pof": kupiec,
+            "christoffersen_independence": christoffersen,
+            "conditional_coverage_lr_stat": cc_lr,
+            "conditional_coverage_p_value": cc_p,
+            "conditional_coverage_status": _backtest_status(cc_p),
+        }
+        if alpha == 0.95:
+            exception_rows_95 = [
+                {
+                    "timestamp": pd.Timestamp(index).isoformat(),
+                    "loss": float(row["loss"]),
+                    "rolling_historical_var": float(row["var"]),
+                    "exception": bool(exceptions.loc[index]),
+                }
+                for index, row in aligned.iterrows()
+            ]
+    return {
+        "study_name": "VaR exception backtesting with Kupiec and Christoffersen diagnostics",
+        "literature": ["Kupiec1995", "Christoffersen1998", "AcerbiTasche2002"],
+        "status": "IMPLEMENTED_ROLLING_HISTORICAL_VAR_BACKTEST",
+        "loss_sign_convention": "L_t = -R_t; exceptions use L_t > VaR_alpha",
+        "levels": levels,
+        "rolling_exception_rows_95": exception_rows_95,
+        "limitations": [
+            "VaR thresholds are rolling historical estimates from daily returns only.",
+            "Expected Shortfall is reported, but formal ES elicitability/backtesting is "
+            "not replicated.",
+            "No intraday liquidity, bid-ask, or stressed market microstructure data are used.",
+        ],
+    }
+
+
+def _kupiec_pof_test(exceptions: int, observations: int, expected_prob: float) -> dict[str, Any]:
+    if observations <= 0 or expected_prob <= 0.0 or expected_prob >= 1.0:
+        return {"status": "UNAVAILABLE", "lr_stat": None, "p_value": None}
+    observed_prob = exceptions / observations
+    restricted = _bernoulli_log_likelihood(exceptions, observations, expected_prob)
+    unrestricted = _bernoulli_log_likelihood(exceptions, observations, observed_prob)
+    lr_stat = max(0.0, -2.0 * (restricted - unrestricted))
+    p_value = _chi_square_sf(lr_stat, 1)
+    return {
+        "test": "Kupiec proportion-of-failures",
+        "lr_stat": float(lr_stat),
+        "p_value": p_value,
+        "status": _backtest_status(p_value),
+    }
+
+
+def _christoffersen_independence_test(exceptions: pd.Series) -> dict[str, Any]:
+    values = exceptions.astype(int).to_numpy(dtype=int)
+    if len(values) < 2:
+        return {"status": "UNAVAILABLE", "lr_stat": None, "p_value": None}
+    previous = values[:-1]
+    current = values[1:]
+    n00 = int(((previous == 0) & (current == 0)).sum())
+    n01 = int(((previous == 0) & (current == 1)).sum())
+    n10 = int(((previous == 1) & (current == 0)).sum())
+    n11 = int(((previous == 1) & (current == 1)).sum())
+    total = n00 + n01 + n10 + n11
+    if total <= 0:
+        return {"status": "UNAVAILABLE", "lr_stat": None, "p_value": None}
+    pi = (n01 + n11) / total
+    pi01 = n01 / (n00 + n01) if (n00 + n01) else 0.0
+    pi11 = n11 / (n10 + n11) if (n10 + n11) else 0.0
+    restricted = _transition_log_likelihood(n00, n01, n10, n11, pi, pi)
+    unrestricted = _transition_log_likelihood(n00, n01, n10, n11, pi01, pi11)
+    lr_stat = max(0.0, -2.0 * (restricted - unrestricted))
+    p_value = _chi_square_sf(lr_stat, 1)
+    return {
+        "test": "Christoffersen independence",
+        "n00": n00,
+        "n01": n01,
+        "n10": n10,
+        "n11": n11,
+        "lr_stat": float(lr_stat),
+        "p_value": p_value,
+        "status": _backtest_status(p_value),
+    }
+
+
+def _bernoulli_log_likelihood(successes: int, observations: int, probability: float) -> float:
+    probability = _clip_probability(probability)
+    failures = observations - successes
+    return successes * math.log(probability) + failures * math.log1p(-probability)
+
+
+def _transition_log_likelihood(
+    n00: int,
+    n01: int,
+    n10: int,
+    n11: int,
+    pi01: float,
+    pi11: float,
+) -> float:
+    pi01 = _clip_probability(pi01)
+    pi11 = _clip_probability(pi11)
+    return (
+        n00 * math.log1p(-pi01)
+        + n01 * math.log(pi01)
+        + n10 * math.log1p(-pi11)
+        + n11 * math.log(pi11)
+    )
+
+
+def _clip_probability(value: float) -> float:
+    return min(max(float(value), 1e-12), 1.0 - 1e-12)
+
+
+def _chi_square_sf(value: float | None, df: int) -> float | None:
+    if value is None or not np.isfinite(value) or value < 0.0:
+        return None
+    if df == 1:
+        return float(math.erfc(math.sqrt(value / 2.0)))
+    if df == 2:
+        return float(math.exp(-value / 2.0))
+    return None
+
+
+def _backtest_status(p_value: float | None) -> str:
+    if p_value is None:
+        return "UNAVAILABLE"
+    return "REJECTS_MODEL_AT_5PCT" if p_value < 0.05 else "DOES_NOT_REJECT_AT_5PCT"
+
+
+def _sharpe_inference_study(
+    returns: pd.Series,
+    risk_free_rate: float,
+    trial_count: int,
+) -> dict[str, Any]:
+    clean = returns.astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+    periodic_rf = annual_rate_to_periodic(risk_free_rate, 252)
+    excess = clean - periodic_rf
+    n = int(len(excess))
+    if n < 30 or float(excess.std(ddof=1)) == 0.0:
+        return {
+            "study_name": "Sharpe inference and deflated Sharpe approximation",
+            "status": "NOT_SUPPORTED_INSUFFICIENT_OR_ZERO_VARIANCE_SAMPLE",
+            "observations": n,
+        }
+    mean_excess = float(excess.mean())
+    sigma = float(excess.std(ddof=1))
+    sharpe_daily = mean_excess / sigma
+    sharpe_annual = sharpe_daily * math.sqrt(252.0)
+    skew = float(excess.skew())
+    kurtosis = float(excess.kurtosis() + 3.0)
+    denominator = 1.0 - skew * sharpe_daily + ((kurtosis - 1.0) / 4.0) * sharpe_daily**2
+    denominator = max(denominator, 1e-12)
+    sr_standard_error_daily = math.sqrt(denominator / max(n - 1, 1))
+    normal = NormalDist()
+    z_zero = sharpe_daily / sr_standard_error_daily
+    psr_zero = normal.cdf(z_zero)
+    safe_trials = max(int(trial_count), 1)
+    multiple_testing_threshold_daily = normal.inv_cdf(1.0 - 1.0 / (safe_trials + 1.0)) * math.sqrt(
+        (1.0 + 0.5 * sharpe_daily**2) / max(n - 1, 1)
+    )
+    z_deflated = (sharpe_daily - multiple_testing_threshold_daily) / sr_standard_error_daily
+    deflated_probability = normal.cdf(z_deflated)
+    return {
+        "study_name": "Sharpe inference, probabilistic Sharpe ratio, and deflated Sharpe proxy",
+        "literature": ["Lo2002", "BaileyLopezDePrado2014", "HarveyLiuZhu2016"],
+        "status": "IMPLEMENTED_AS_DAILY_RETURN_INFERENCE_APPROXIMATION",
+        "observations": n,
+        "annualized_sharpe": float(sharpe_annual),
+        "daily_sharpe": float(sharpe_daily),
+        "sharpe_standard_error_annualized": float(sr_standard_error_daily * math.sqrt(252.0)),
+        "probabilistic_sharpe_ratio_gt_zero": float(psr_zero),
+        "multiple_testing_trial_count": safe_trials,
+        "deflated_sharpe_threshold_annualized": float(
+            multiple_testing_threshold_daily * math.sqrt(252.0)
+        ),
+        "deflated_sharpe_probability": float(deflated_probability),
+        "skewness": skew,
+        "kurtosis": kurtosis,
+        "limitations": [
+            "Deflated Sharpe is approximated from configured model-search breadth, not a "
+            "full strategy zoo.",
+            "Serial-correlation and non-stationarity adjustments are limited with daily "
+            "close data.",
+            "Inference describes historical risk-adjusted returns, not tradable alpha.",
+        ],
+    }
+
+
+def _trial_count_from_ml_config() -> int:
+    return 7
+
+
+def _execution_cost_study(
+    price_series: pd.Series,
+    volume_series: pd.Series,
+    annual_volatility: float,
+) -> dict[str, Any]:
+    prices = price_series.astype(float).replace([np.inf, -np.inf], np.nan).dropna()
+    volumes = volume_series.astype(float).reindex(prices.index).replace([np.inf, -np.inf], np.nan)
+    dollar_volume = (prices * volumes).dropna()
+    adv20 = float(volumes.tail(20).mean()) if len(volumes.dropna()) else float("nan")
+    adv_dollar20 = float(dollar_volume.tail(20).mean()) if len(dollar_volume) else float("nan")
+    if not np.isfinite(adv_dollar20) or adv_dollar20 <= 0.0:
+        return {
+            "study_name": "Execution cost and slippage scenario analysis",
+            "status": "NOT_SUPPORTED_VOLUME_OR_DOLLAR_VOLUME_UNAVAILABLE",
+            "limitations": ["No reliable volume proxy for cost scenarios."],
+        }
+    scenarios = []
+    for participation, spread_bps in ((0.001, 2.5), (0.01, 5.0), (0.05, 10.0)):
+        impact_bps = max(0.0, float(annual_volatility)) * math.sqrt(participation) * 10000.0 * 0.10
+        total_bps = spread_bps + impact_bps
+        scenarios.append(
+            {
+                "participation_rate_of_adv": participation,
+                "hypothetical_notional": adv_dollar20 * participation,
+                "assumed_half_spread_bps": spread_bps,
+                "square_root_impact_bps": float(impact_bps),
+                "total_one_way_cost_bps": float(total_bps),
+                "cost_pct": float(total_bps / 10000.0),
+                "cost_per_100k_notional": float(100000.0 * total_bps / 10000.0),
+            }
+        )
+    return {
+        "study_name": "Execution cost and slippage scenario analysis",
+        "literature": ["AlmgrenChriss2001", "Gatheral2010"],
+        "status": "HYPOTHETICAL_DAILY_ADV_SCENARIO_NOT_REAL_EXECUTION_MODEL",
+        "average_daily_volume_20d": adv20,
+        "average_daily_dollar_volume_20d": adv_dollar20,
+        "annualized_volatility_input": float(annual_volatility),
+        "scenario_rows": scenarios,
+        "limitations": [
+            "No bid-ask spread, order book, venue, intraday volume curve, or broker fill "
+            "data are used.",
+            "Rows are cost-sensitivity scenarios only; they are not orders, sizing, or "
+            "execution advice.",
+            "Square-root impact is a stylized approximation, not a calibrated "
+            "Almgren-Chriss implementation.",
+        ],
+    }
+
+
+def _literature_implementation_map() -> list[dict[str, Any]]:
+    return [
+        {
+            "research_family": "Machine-learning asset pricing",
+            "implemented_status": "proxy_implemented",
+            "report_block": "ml_forecasting",
+            "what_is_supported": (
+                "Walk-forward daily-return forecasting with leakage controls and naive "
+                "baselines."
+            ),
+            "what_is_not_supported": (
+                "Large cross-section SDF/IPCA/deep asset pricing replication."
+            ),
+            "references": ["GuKellyXiu2020", "ChenPelgerZhu2024"],
+        },
+        {
+            "research_family": "Multiple testing and overfitting control",
+            "implemented_status": "diagnostic_proxy_implemented",
+            "report_block": "sharpe_inference_study",
+            "what_is_supported": (
+                "Probabilistic Sharpe and approximate deflated Sharpe from daily returns."
+            ),
+            "what_is_not_supported": (
+                "Full strategy-zoo trial reconstruction or page-level replication audit."
+            ),
+            "references": ["BaileyLopezDePrado2014", "HarveyLiuZhu2016"],
+        },
+        {
+            "research_family": "Factor alpha and benchmark controls",
+            "implemented_status": "benchmark_proxy_implemented",
+            "report_block": "benchmark_relative_study",
+            "what_is_supported": (
+                "CAPM/benchmark-relative active return, tracking error, capture, beta "
+                "diagnostics."
+            ),
+            "what_is_not_supported": (
+                "Official Fama-French-Carhart factor regression with point-in-time "
+                "fundamentals."
+            ),
+            "references": ["FamaFrench1993", "Carhart1997", "FamaFrench2015"],
+        },
+        {
+            "research_family": "Volatility and microstructure",
+            "implemented_status": "daily_range_proxy_implemented",
+            "report_block": "range_volatility_study",
+            "what_is_supported": "Daily OHLC range-volatility proxies.",
+            "what_is_not_supported": (
+                "Intraday realized volatility, VPIN, order-flow imbalance, or "
+                "market-microstructure replication."
+            ),
+            "references": ["AndersenBollerslevDieboldLabys2003", "Corsi2009HAR"],
+        },
+        {
+            "research_family": "Tail risk and VaR/ES",
+            "implemented_status": "rolling_var_backtest_implemented",
+            "report_block": "tail_risk_backtesting_study",
+            "what_is_supported": "Historical VaR/ES with rolling exception tests for VaR.",
+            "what_is_not_supported": (
+                "Full EVT/POT calibration or formal ES regulatory backtesting."
+            ),
+            "references": [
+                "Artzner1999",
+                "AcerbiTasche2002",
+                "Kupiec1995",
+                "Christoffersen1998",
+            ],
+        },
+        {
+            "research_family": "Execution costs and market impact",
+            "implemented_status": "scenario_proxy_implemented",
+            "report_block": "execution_cost_study",
+            "what_is_supported": "Daily ADV-based spread/impact sensitivity scenarios.",
+            "what_is_not_supported": (
+                "Broker fills, live order routing, intraday schedules, or calibrated "
+                "market-impact execution."
+            ),
+            "references": ["AlmgrenChriss2001", "Gatheral2010"],
+        },
+        {
+            "research_family": "Meta-labeling and event bars",
+            "implemented_status": "not_supported_with_current_data",
+            "report_block": "literature_implementation_map",
+            "what_is_supported": "The limitation is explicitly disclosed.",
+            "what_is_not_supported": (
+                "Triple-barrier labeling, dollar bars, and intraday event-driven "
+                "meta-labeling."
+            ),
+            "references": ["LopezDePrado2018"],
+        },
+    ]
 
 
 def _stock_monte_carlo_section(
@@ -631,6 +1257,143 @@ def _single_stock_backtest_section(returns: pd.Series) -> dict[str, Any]:
             "assumption": "single_stock_buy_and_hold_no_real_execution",
         }
     }
+
+
+def _predictive_reliability_audit(
+    *,
+    data_mode: str,
+    data_warnings: list[str],
+    observations: int,
+    ml_results: dict[str, Any],
+) -> dict[str, Any]:
+    warnings = [str(item) for item in data_warnings]
+    da = _float_or_none(ml_results.get("directional_accuracy"))
+    baseline_da = _float_or_none(ml_results.get("baseline_directional_accuracy"))
+    da_edge = _float_or_none(ml_results.get("directional_accuracy_edge_vs_naive"))
+    if da_edge is None and da is not None and baseline_da is not None:
+        da_edge = da - baseline_da
+    rmse = _float_or_none(ml_results.get("rmse"))
+    baseline_rmse = _float_or_none(ml_results.get("baseline_rmse"))
+    oos_r2 = _float_or_none(ml_results.get("oos_r_squared"))
+    ic = _float_or_none(ml_results.get("information_coefficient"))
+    gates = _mapping(ml_results.get("approval_gates"))
+    criteria = [
+        _audit_criterion(
+            "provider_data_not_synthetic",
+            data_mode.startswith("provider_"),
+            data_mode,
+            "provider_*",
+        ),
+        _audit_criterion(
+            "risk_free_proxy_available",
+            not any(item.startswith("RISK_FREE_PROXY_") for item in warnings),
+            ",".join(item for item in warnings if item.startswith("RISK_FREE_PROXY_"))
+            or "available",
+            "no risk-free proxy warning",
+        ),
+        _audit_criterion("minimum_test_history", observations >= 756, observations, ">=756"),
+        _audit_criterion(
+            "rmse_improves_naive",
+            bool(
+                gates.get(
+                    "rmse_improves_naive",
+                    rmse is not None and baseline_rmse is not None and rmse < baseline_rmse,
+                )
+            ),
+            _audit_delta(baseline_rmse, rmse),
+            "model RMSE < naive RMSE",
+        ),
+        _audit_criterion(
+            "directional_accuracy_edge_ge_2pct",
+            bool(
+                gates.get(
+                    "directional_accuracy_edge_ge_2pct",
+                    da_edge is not None and da_edge >= 0.02,
+                )
+            ),
+            da_edge,
+            ">=0.02",
+        ),
+        _audit_criterion(
+            "directional_accuracy_ge_52pct",
+            bool(gates.get("directional_accuracy_ge_52pct", da is not None and da >= 0.52)),
+            da,
+            ">=0.52",
+        ),
+        _audit_criterion(
+            "oos_r_squared_positive",
+            bool(gates.get("oos_r_squared_positive", oos_r2 is not None and oos_r2 > 0.0)),
+            oos_r2,
+            ">0",
+        ),
+        _audit_criterion(
+            "information_coefficient_positive",
+            bool(gates.get("information_coefficient_positive", ic is not None and ic > 0.0)),
+            ic,
+            ">0",
+        ),
+    ]
+    failed = [item["criterion"] for item in criteria if not item["passed"]]
+    hard_data_failure = any(
+        item in failed for item in {"provider_data_not_synthetic", "minimum_test_history"}
+    )
+    if hard_data_failure:
+        rating = "RED_INVALID_FOR_PREDICTIVE_USE"
+    elif failed:
+        rating = "AMBER_NO_VALIDATED_PREDICTIVE_EDGE"
+    else:
+        rating = "GREEN_STRICT_RESEARCH_EDGE_DIAGNOSTICS_PASSED"
+    return {
+        "rating": rating,
+        "strict_predictive_edge_validated": rating.startswith("GREEN_"),
+        "criteria": criteria,
+        "failed_criteria": failed,
+        "status_reason": str(ml_results.get("status_reason", "")),
+        "interpretation": _predictive_reliability_interpretation(rating, failed),
+    }
+
+
+def _audit_criterion(
+    criterion: str,
+    passed: bool,
+    observed: object,
+    required: object,
+) -> dict[str, Any]:
+    return {
+        "criterion": criterion,
+        "passed": bool(passed),
+        "observed": observed,
+        "required": required,
+    }
+
+
+def _audit_delta(baseline: float | None, model: float | None) -> float | None:
+    if baseline is None or model is None:
+        return None
+    return float(baseline - model)
+
+
+def _predictive_reliability_interpretation(rating: str, failed: list[str]) -> str:
+    if rating.startswith("GREEN_"):
+        return (
+            "Strict predictive diagnostics passed under the configured walk-forward test; "
+            "this remains research-only and not a live trading approval."
+        )
+    if rating.startswith("RED_"):
+        return "Predictive use is invalidated by data or sample-quality failures."
+    return "No validated predictive edge; failed criteria: " + ", ".join(failed)
+
+
+def _float_or_none(value: object) -> float | None:
+    try:
+        clean = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return clean if np.isfinite(clean) else None
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _ohlcv_summary(ohlcv: pd.DataFrame, symbol: str) -> dict[str, Any]:

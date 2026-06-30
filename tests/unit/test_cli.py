@@ -238,6 +238,55 @@ def test_cli_build_quant_terminal_report_uses_pipeline(monkeypatch, capsys, tmp_
     assert payload["research_only"] is True
 
 
+def test_cli_generate_final_academic_paper_uses_generator(
+    monkeypatch, capsys, tmp_path
+) -> None:  # noqa: ANN001
+    def fake_generator(**kwargs):  # noqa: ANN001
+        return {
+            "research_only": True,
+            "outputs": {"markdown": str(tmp_path / "paper.md")},
+            "include_figures": kwargs["include_figures"],
+        }
+
+    monkeypatch.setattr(cli, "generate_final_academic_paper", fake_generator)
+
+    exit_code = cli.main(
+        [
+            "generate-final-academic-paper",
+            "--institutional-study",
+            str(tmp_path / "study.json"),
+            "--output-dir",
+            str(tmp_path / "final"),
+            "--include-figures",
+            "--overwrite",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["research_only"] is True
+    assert payload["include_figures"] is True
+
+
+def test_cli_build_final_institutional_package_dry_run(capsys, tmp_path) -> None:  # noqa: ANN001
+    exit_code = cli.main(
+        [
+            "build-final-institutional-package",
+            "--config",
+            "configs/quant_terminal_10_stocks.yaml",
+            "--output-dir",
+            str(tmp_path / "package"),
+            "--dry-run",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["dry_run"] is True
+    assert payload["research_only"] is True
+    assert payload["strict_real_data"] is True
+
+
 def test_cli_generate_stock_academic_report_from_local_json(capsys, tmp_path) -> None:  # noqa: ANN001
     terminal_report = tmp_path / "terminal.json"
     terminal_report.write_text(json.dumps(_sample_academic_terminal_report()), encoding="utf-8")

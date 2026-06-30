@@ -210,6 +210,7 @@ def interpret_monte_carlo(mc_results: dict[str, Any]) -> str:
     """Interpret Monte Carlo paths with economic context."""
 
     normal = _mapping(mc_results.get("parametric_normal"))
+    path_count = _int(normal.get("path_count"))
     p05 = _float(normal.get("terminal_p05"))
     median = _float(normal.get("terminal_median"))
     p95 = _float(normal.get("terminal_p95"))
@@ -236,7 +237,7 @@ def interpret_monte_carlo(mc_results: dict[str, Any]) -> str:
                         "la mayoria de escenarios proyectan resultados positivos."
 
     return (
-        "Modelo parametrico normal (GBM, 1000 simulaciones, horizonte 1 ano): "
+        f"Modelo parametrico normal (GBM, {_count(path_count)} simulaciones, horizonte 1 ano): "
         f"P5={_pct(p05)}, Mediana={_pct(median)}, P95={_pct(p95)}. "
         f"El intervalo P5-P95 contiene el 90% de los resultados simulados. "
         f"{mc_note} {loss_note} "
@@ -246,28 +247,29 @@ def interpret_monte_carlo(mc_results: dict[str, Any]) -> str:
     )
 
 
-def interpret_backtests(backtest_results: dict[str, Any]) -> str:
+def interpret_backtests(backtest_results: dict[str, Any], currency: str = "moneda base") -> str:
     """Interpret backtest outputs with economic conclusions."""
 
     buy_hold = _mapping(backtest_results.get("buy_and_hold"))
     metrics = _mapping(buy_hold.get("metrics"))
+    initial_capital = 10000.0
     final_equity = _float(metrics.get("final_equity"))
     drawdown = _float(metrics.get("max_drawdown"))
 
     perf_note = ""
-    if final_equity is not None:
-        gain = final_equity - 10000.0
-        gain_pct = gain / 10000.0 if gain != 0 else 0
+    if final_equity is not None and initial_capital is not None:
+        gain = final_equity - initial_capital
+        gain_pct = gain / initial_capital if initial_capital else 0
         if gain > 0:
-            perf_note = f"La estrategia buy-and-hold genero una ganancia de {_num(gain)} EUR " \
-                        f"({_pct(gain_pct)} sobre 10.000 EUR de capital inicial)."
+            perf_note = f"La estrategia buy-and-hold genero una ganancia de {_money(gain)} {currency} " \
+                        f"({_pct(gain_pct)} sobre {_money(initial_capital)} {currency} de capital inicial)."
         else:
-            perf_note = f"La estrategia buy-and-hold habria perdido {_num(abs(gain))} EUR " \
-                        f"({_pct(abs(gain_pct))} de perdida sobre 10.000 EUR iniciales)."
+            perf_note = f"La estrategia buy-and-hold habria perdido {_money(abs(gain))} {currency} " \
+                        f"({_pct(abs(gain_pct))} de perdida sobre {_money(initial_capital)} {currency} iniciales)."
 
     return (
-        f"Capital inicial ficticio: 10.000 EUR. "
-        f"Resultado buy-and-hold: capital final={_num(final_equity)} EUR, "
+        f"Capital inicial ficticio: {_money(initial_capital)} {currency}. "
+        f"Resultado buy-and-hold: capital final={_money(final_equity)} {currency}, "
         f"maximo drawdown={_pct(drawdown)}. "
         f"{perf_note} "
         "IMPORTANTE: El backtest es una simulacion historica sin costes de transaccion, "
@@ -276,7 +278,7 @@ def interpret_backtests(backtest_results: dict[str, Any]) -> str:
     )
 
 
-def interpret_options(options_results: dict[str, Any]) -> str:
+def interpret_options(options_results: dict[str, Any], currency: str = "moneda base") -> str:
     """Interpret theoretical option analytics with context."""
 
     call = _float(options_results.get("black_scholes_call"))
@@ -285,7 +287,7 @@ def interpret_options(options_results: dict[str, Any]) -> str:
     return (
         "Bajo Black-Scholes-Merton parametrico (opcion ATM, madurez configurada, "
         f"volatilidad historica {_pct(volatility)}): "
-        f"precio teorico call={_num(call)} EUR, put={_num(put)} EUR. "
+        f"precio teorico call={_num(call)} {currency}, put={_num(put)} {currency}. "
         "La paridad put-call se evalua con dividend yield continuo si esta configurado. "
         "ADVERTENCIA: Valoracion puramente academica. Sin option chain real, "
         "sin smile de volatilidad ni microestructura. PARAMETRIC_EDUCATIONAL_MODEL."
@@ -300,13 +302,25 @@ def interpret_ml(ml_results: dict[str, Any]) -> str:
     mae = _float(ml_results.get("mae"))
     directional_accuracy = _float(ml_results.get("directional_accuracy"))
     baseline = _float(ml_results.get("baseline_directional_accuracy"))
+    oos_r2 = _float(ml_results.get("oos_r_squared"))
+    ic = _float(ml_results.get("information_coefficient"))
+    da_edge = _float(ml_results.get("directional_accuracy_edge_vs_naive"))
+    gates = _mapping(ml_results.get("approval_gates"))
+    strict_pass = bool(gates) and all(bool(value) for value in gates.values())
+    status_reason = str(ml_results.get("status_reason", ""))
+    verdict = (
+        "Los criterios estrictos de edge predictivo pasan bajo esta prueba walk-forward."
+        if strict_pass
+        else "No hay evidencia suficiente de edge predictivo robusto bajo los criterios estrictos."
+    )
     return (
         "Bajo los supuestos de validacion walk-forward, el bloque ML debe leerse como "
         "diagnostico out-of-sample, no como capacidad predictiva asegurada. "
         f"Estado del modelo: {status}. RMSE={_num(rmse)}, MAE={_num(mae)}, "
-        f"directional accuracy={_pct(directional_accuracy)}, baseline={_pct(baseline)}. "
-        "Si el modelo no supera al baseline naive, la salida correcta es mantener cautela "
-        "sobre decisiones impulsadas por el modelo."
+        f"OOS R^2={_num(oos_r2)}, IC={_num(ic)}, "
+        f"directional accuracy={_pct(directional_accuracy)}, baseline={_pct(baseline)}, "
+        f"DA edge={_pct(da_edge)}. {verdict} Detalle de estado: {status_reason} "
+        "Una rentabilidad historica elevada del activo o del buy-and-hold no valida alpha del modelo."
     )
 
 
@@ -323,6 +337,7 @@ def build_research_action_scenarios(
     var_results = _mapping(stock_report.get("var"))
     historical_var = _mapping(var_results.get("historical"))
     ml = _mapping(stock_report.get("ml_forecasting"))
+    predictive_audit = _mapping(stock_report.get("predictive_reliability_audit"))
     normal_mc = _mapping(_mapping(stock_report.get("monte_carlo")).get("parametric_normal"))
     options = _mapping(stock_report.get("options_theoretical_analytics"))
     signal = str(decision_signal.get("signal", "INSUFFICIENT_DATA"))
@@ -367,6 +382,7 @@ def build_research_action_scenarios(
         f"Sharpe={_num(sharpe)}, max drawdown={_pct(drawdown)}, "
         f"VaR95={_pct(var_95)}, ES95={_pct(es_95)}, "
         f"ML directional accuracy={_pct(ml_da)}, ML IC={_num(ml_ic)}, "
+        f"predictive reliability={predictive_audit.get('rating', 'N/A')}, "
         f"Monte Carlo median={_pct(mc_median)}, BSM volatility={_pct(option_vol)}, "
         f"signal={signal}, confidence={confidence}."
     )
@@ -374,6 +390,7 @@ def build_research_action_scenarios(
         "Limites de invalidez: no usar si cambia el proveedor de datos, si hay split/dividendo "
         "no ajustado, si VaR/ES supera los limites configurados, si el modelo ML no supera "
         "baseline naive, si el drawdown historico se amplifica, o si el regimen macro cambia. "
+        f"Predictive reliability: {predictive_audit.get('rating', 'N/A')}. "
         "No contiene sizing, orden, precio objetivo ni recomendacion personalizada."
     )
     return {
@@ -397,7 +414,10 @@ def build_stock_conclusions(stock_report: dict[str, Any], asset_id: str = "") ->
         data_quality_warnings=list(stock_report.get("warnings", [])),
     )
     research_actions = build_research_action_scenarios(stock_report, decision_signal)
-    data_mode = str(_mapping(stock_report.get("data_used")).get("data_mode", "unknown"))
+    data_used = _mapping(stock_report.get("data_used"))
+    predictive_audit = _mapping(stock_report.get("predictive_reliability_audit"))
+    data_mode = str(data_used.get("data_mode", "unknown"))
+    currency = str(data_used.get("currency", "moneda base"))
     if data_mode in {"synthetic_fallback", "offline_synthetic"}:
         data_note = "Los calculos usan datos sinteticos o fallback de demostracion. "
     else:
@@ -414,10 +434,10 @@ def build_stock_conclusions(stock_report: dict[str, Any], asset_id: str = "") ->
             _mapping(stock_report.get("ml_forecasting"))
         ),
         "Backtesting interpretation": interpret_backtests(
-            _mapping(stock_report.get("backtesting_results"))
+            _mapping(stock_report.get("backtesting_results")), currency
         ),
         "Options interpretation": interpret_options(
-            _mapping(stock_report.get("options_theoretical_analytics"))
+            _mapping(stock_report.get("options_theoretical_analytics")), currency
         ),
         "Decision signal": research_signal_text(decision_signal),
         "Research action classification": research_actions["classification"],
@@ -426,7 +446,10 @@ def build_stock_conclusions(stock_report: dict[str, Any], asset_id: str = "") ->
         "Overall research conclusion": (
             "CONCLUSION GLOBAL DEL ANALISIS: El informe ha examinado el comportamiento historico "
             "del activo desde multiples perspectivas (rendimiento, riesgo, CAPM, VaR, Monte Carlo, "
-            "ML, backtesting y opciones). "
+            "ML, backtesting y opciones). La rentabilidad historica y el buy-and-hold describen beta, "
+            "regimen de mercado y tolerancia al drawdown; no validan por si mismos alpha predictivo. "
+            f"AUDIT PREDICTIVO: {predictive_audit.get('rating', 'N/A')} - "
+            f"{predictive_audit.get('interpretation', 'N/A')} "
             f"RESEARCH-ONLY QUANTITATIVE DECISION SIGNAL: {research_signal_text(decision_signal)} "
             f"ACCION DE INVESTIGACION NO OPERATIVA: {research_actions['classification']} "
             f"ADVERTENCIAS: (1) {data_note}"
@@ -467,6 +490,20 @@ def _pct(value: object) -> str:
 def _num(value: object) -> str:
     clean = _float(value)
     return "N/A" if clean is None else f"{clean:,.4f}"
+
+
+def _money(value: object) -> str:
+    clean = _float(value)
+    return "N/A" if clean is None else f"{clean:,.2f}"
+
+
+def _int(value: object) -> int | None:
+    clean = _float(value)
+    return None if clean is None else int(clean)
+
+
+def _count(value: int | None) -> str:
+    return "N/A" if value is None else f"{value:,}"
 
 
 def research_signal_text(decision: dict[str, Any]) -> str:

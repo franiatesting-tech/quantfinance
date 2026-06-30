@@ -1,6 +1,6 @@
 # Quant Platform
 
-Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical/parametric/Monte Carlo VaR, Expected Shortfall, performance metrics, portfolio optimization, Monte Carlo, responsible walk-forward ML diagnostics, research-only decision signals, Black-Scholes/binomial options, fixed income, rates, hedging, exposure, vectorized backtesting, academic per-stock reports, and a local read-only Streamlit Stock Research Terminal.
+Auditable Quant Finance research platform for equity and crypto experiments. The current implementation includes mathematical conventions, OHLCV quality checks, synthetic data, local dataset registry, returns, drawdown, historical/parametric/Monte Carlo VaR, Expected Shortfall, performance metrics, portfolio optimization, Monte Carlo, responsible walk-forward ML diagnostics, research-only decision signals, Black-Scholes/binomial options, fixed income, rates, hedging, exposure, vectorized backtesting, academic per-stock reports, a final institutional state-of-the-art research package, and a local read-only Streamlit Institutional Quant Research Terminal.
 
 ## Current State
 
@@ -30,7 +30,14 @@ Optional local UI dependencies:
 py -3 -m pip install -e ".[dev,ui]"
 ```
 
-Use `py -3` on this Windows environment. The `python` alias may point to the Microsoft Store stub unless configured manually.
+Use `py -3.13` for the validated final institutional package workflow in this Windows environment. The `python` alias may point to the Microsoft Store stub unless configured manually.
+
+Final package and PDF dependencies:
+
+```powershell
+py -3.13 -m pip install -e ".[dev,ui,ml,pdf]"
+py -3.13 -m playwright install chromium
+```
 
 ## Run Validation
 
@@ -47,9 +54,12 @@ py -3 -m quant_platform.cli show-settings
 py -3 -m quant_platform.cli download-real-data --config configs/universe_etfs_crypto_daily.yaml --start 2020-01-01 --end 2024-12-31 --limit-equity 5 --limit-crypto 3 --dry-run
 py -3 -m quant_platform.cli run-backtest-demo --dataset-id real_daily_demo --version v1 --profile conservative
 py -3 -m quant_platform.cli compare-profiles --dataset-id real_daily_demo --version v1 --config configs/universe_etfs_crypto_daily.yaml --risk-config configs/risk_profiles.yaml --dry-run
-py -3 -m quant_platform.cli build-quant-terminal-report --config configs/quant_terminal_3_stocks.yaml --offline-synthetic
-py -3 -m quant_platform.cli generate-stock-academic-report --asset AAPL --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --format md --format html --format pdf --include-figures --overwrite
-py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/3stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --format pdf --include-figures --overwrite
+py -3 -m quant_platform.cli build-quant-terminal-report --config configs/quant_terminal_10_stocks.yaml
+py -3 -m quant_platform.cli generate-institutional-study --terminal-report reports/generated/quant_terminal/10stocks_10y_report.json --output-dir reports/generated/institutional_study --max-table-rows 20
+py -3 -m quant_platform.cli build-institutional-study --config configs/quant_terminal_10_stocks.yaml --provider yfinance --output-dir reports/generated/institutional_study --max-table-rows 20
+py -3 -m quant_platform.cli generate-stock-academic-report --asset AAPL --terminal-report reports/generated/quant_terminal/10stocks_10y_report.json --format md --format html --format pdf --include-figures --overwrite
+py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/10stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --format pdf --include-figures --overwrite
+py -3.13 -m quant_platform.cli build-final-institutional-package --config configs/quant_terminal_10_stocks.yaml --provider yfinance --output-dir reports/generated/final_package --max-table-rows 20
 py -3 -m quant_platform.cli list-providers
 py -3 -m quant_platform.cli validate-providers
 py -3 -m quant_platform.cli ui-status
@@ -64,9 +74,9 @@ The CLI loads safe settings and refuses live-trading scope.
 py -3 -m quant_platform.cli launch-ui --host localhost --port 8501
 ```
 
-The UI is local and read-only. The main screen is a single `Stock Research Terminal` page with report selector, stock selector, KPI cards, internal tabs and academic report links. Developer diagnostics are hidden in an expander.
+The UI is local and read-only. The main screen is an `Institutional Quant Research Terminal` when a final package exists, with tabs for Overview, Asset Results, Portfolio, Tail Risk, ML Confidence, Robustness, Decision Gates, Final Paper and Methodology. Developer diagnostics are hidden in an expander.
 
-The terminal consumes `reports/generated/quant_terminal/3stocks_10y_report.json` and shows stock detail, data quality, risk, Monte Carlo, ML, backtesting, options and report outputs without running downloads or orders.
+The terminal consumes `reports/generated/quant_terminal/10stocks_10y_report.json` and shows stock detail, data quality, risk, Monte Carlo, ML, backtesting, options and report outputs without running downloads or orders.
 
 The `Formulas` section explains simple return, log return, portfolio return, equity curve, volatility, Sharpe, Sortino, max drawdown, VaR, Expected Shortfall, turnover, and transaction costs with LaTeX plus plain-language interpretation.
 
@@ -108,9 +118,11 @@ Generated real-data artifacts are local only:
 
 - `data/registry/`: CSV datasets, manifests, and data quality reports.
 - `reports/generated/`: backtest reports, profile comparison reports, and trial registries.
-- `reports/generated/quant_terminal/3stocks_10y_report.json`: professional 3-stock terminal report.
-- `reports/generated/portfolio_optimization/3stocks_frontier.csv`: CSV spreadsheet equivalent for the optimization frontier.
+- `reports/generated/quant_terminal/10stocks_10y_report.json`: professional 10-stock terminal report.
+- `reports/generated/portfolio_optimization/10stocks_10y_frontier.csv`: CSV spreadsheet equivalent for the optimization frontier.
+- `reports/generated/institutional_study/`: strict real-data institutional study package with JSON, summary Markdown, academic paper Markdown, CSV tables, and HTML/SVG figures.
 - `reports/generated/academic_stock_reports/<asset>/`: per-stock academic Markdown, HTML, optional PDF, metadata, and Plotly figure HTML files.
+- `reports/generated/final_package/`: final institutional package with terminal report, institutional study, CSV tables, HTML figures, reproducibility manifest, and final Markdown/HTML/PDF paper.
 
 If these folders are empty, the UI shows safe CLI commands instead of failing. Demo artifacts, if generated in future, must be clearly marked `DEMO_SYNTHETIC_NOT_REAL_DATA` and remain ignored by Git.
 
@@ -131,7 +143,9 @@ If these folders are empty, the UI shows safe CLI commands instead of failing. D
 - Profile comparison report: generated under `reports/generated/`; it compares conservative and aggressive profiles on the same dataset and benchmark set.
 - Provider comparison report: compares coverage/quality metadata across provider reports, not tick-by-tick price equality.
 - Professional quant terminal report: generated with `build-quant-terminal-report`; it analyzes AAPL/MSFT/NVDA, SPY benchmark, risk-free proxy/config rate, portfolio optimization, Monte Carlo, VaR, strategy backtests, options, fixed income, rates, hedging, exposure, and method bibliography.
-- Academic stock reports: generated with `generate-stock-academic-report` or `generate-all-stock-academic-reports`; each report contains 24 sections, formulas, figures, ML assessment, quantitative decision signal, conclusions, limitations, reproducibility, mathematical appendix, and bibliography traceability. PDF export uses WeasyPrint or Pandoc when available; otherwise HTML remains printable and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.
+- Institutional state-of-the-art study: generated with `generate-institutional-study` from an existing terminal report, or with `build-institutional-study` from provider data and config. It rejects synthetic data by default, writes first-row data tables, metrics, VaR/ES, ML audit, correlation/covariance matrices, portfolio weights, portfolio tail risk, concentration diagnostics, shrinkage sensitivity, critical findings, and HTML/SVG figures for normalized prices, cumulative returns, drawdowns, correlation heatmap, risk-return scatter, efficient frontier, and research decision scores. It also writes `institutional_quant_finance_paper.md`, a detailed academic paper with glossary, formulas, economic interpretation, limitations, roadmap, and implementation plan.
+- Academic stock reports: generated with `generate-stock-academic-report` or `generate-all-stock-academic-reports`; each report contains 25 sections, formulas, figures, ML assessment, quantitative decision signal, conclusions, limitations, reproducibility, mathematical appendix, and bibliography traceability. PDF export uses WeasyPrint, Playwright Chromium, or Pandoc when available; otherwise HTML remains printable and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.
+- Final institutional package: generated with `build-final-institutional-package`; it creates the terminal report, institutional study, final paper, reproducibility manifest, CSV tables, HTML figures and optional PDF. The paper includes dependency/configuration instructions for PDF rendering, factor data and manual email delivery.
 - Local UI: reads these reports for inspection only and does not generate new reports automatically.
 
 Free public providers can revise data, fail per ticker, impose rate limits, and have licensing constraints. yfinance adjusted-price handling and corporate actions require review before professional use. Current universes can have survivorship bias.
@@ -159,6 +173,8 @@ Free public providers can revise data, fail per ticker, impose rate limits, and 
 - Iteration 008 notes: `docs/development/iteration_008_interactive_research_ui.md`.
 - Iteration 009 notes: `docs/development/iteration_009_professional_quant_terminal.md`.
 - Professional quant terminal design: `docs/architecture/professional_quant_terminal_design.md`.
+- Final institutional platform design: `docs/architecture/final_institutional_quant_platform_design.md`.
+- Final institutional package user guide: `docs/usage/final_institutional_package_user_guide.md`.
 - Academic stock report design: `docs/architecture/academic_stock_report_design.md`.
 - Professional methods review: `docs/research/professional_quant_methods_review.md`.
 - Interactive UI design: `docs/architecture/interactive_ui_design.md`.

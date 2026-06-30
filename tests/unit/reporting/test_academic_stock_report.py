@@ -23,9 +23,10 @@ def test_academic_stock_report_renders_required_sections_and_outputs(tmp_path) -
         include_figures=False,
     )
 
-    assert "## 5. Data & Provenance" in markdown
-    assert "## 17. Quantitative Decision Signal" in markdown
-    assert "## 23. Mathematical Appendix" in markdown
+    assert "## 5. Literature-Driven Research Design" in markdown
+    assert "## 6. Data & Provenance" in markdown
+    assert "## 18. Quantitative Decision Signal" in markdown
+    assert "## 24. Mathematical Appendix" in markdown
     assert "Research-only. This is not investment advice." in markdown
     assert "<html" in html
     assert (tmp_path / "AAPL" / "AAPL_academic_report.md").exists()

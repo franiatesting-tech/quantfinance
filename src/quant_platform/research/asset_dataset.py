@@ -61,7 +61,12 @@ class QuantTerminalConfig:
     def market_symbols(self) -> tuple[str, ...]:
         """Symbols needed for stock, benchmark, and risk-free proxy data."""
 
-        symbols = [*self.selected_stocks, self.benchmark_symbol, self.risk_free_symbol]
+        symbols = [
+            *self.selected_stocks,
+            *self.fallback_stocks,
+            self.benchmark_symbol,
+            self.risk_free_symbol,
+        ]
         return tuple(dict.fromkeys(symbols))
 
 

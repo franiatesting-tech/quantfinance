@@ -32,6 +32,9 @@ class DecisionThresholds:
     max_var_95_daily_loss: float = 0.05
     max_es_95_daily_loss: float = 0.08
     min_ml_directional_accuracy_edge: float = 0.02
+    min_ml_directional_accuracy: float = 0.52
+    min_oos_r_squared: float = 0.0
+    min_information_coefficient: float = 0.0
     min_positive_mc_median_return: float = 0.0
 
 
@@ -156,6 +159,7 @@ def build_research_decision_signal(
     score += float(ml_quality["score_adjustment"])
     drivers_positive.extend(ml_quality["drivers_positive"])
     drivers_negative.extend(ml_quality["drivers_negative"])
+    limits.extend(ml_quality.get("limits_triggered", []))
 
     backtest_quality = _backtest_quality(backtesting or {})
     score += float(backtest_quality["score_adjustment"])
@@ -259,28 +263,93 @@ def _ml_quality(ml_forecasting: dict[str, Any], thresholds: DecisionThresholds) 
     status = str(ml_forecasting.get("status", ml_forecasting.get("model_status", "NOT_RUN")))
     directional_accuracy = _float(ml_forecasting.get("directional_accuracy"))
     baseline_accuracy = _float(ml_forecasting.get("baseline_directional_accuracy", 0.5))
+    oos_r_squared = _float(ml_forecasting.get("oos_r_squared"))
+    information_coefficient = _float(ml_forecasting.get("information_coefficient"))
+    rmse = _float(ml_forecasting.get("rmse"))
+    baseline_rmse = _float(ml_forecasting.get("baseline_rmse"))
+    gates = _mapping(ml_forecasting.get("approval_gates"))
     positive: list[str] = []
     negative: list[str] = []
     score = 0.0
+    limits: list[str] = []
+    edge = None
     if directional_accuracy is not None:
         edge = directional_accuracy - (baseline_accuracy or 0.5)
-        if edge >= thresholds.min_ml_directional_accuracy_edge:
-            score += 0.5
-            positive.append(f"ML directional accuracy has out-of-sample edge ({edge:.2%}).")
+    strict_pass = _strict_ml_pass(
+        status=status,
+        gates=gates,
+        edge=edge,
+        directional_accuracy=directional_accuracy,
+        oos_r_squared=oos_r_squared,
+        information_coefficient=information_coefficient,
+        rmse=rmse,
+        baseline_rmse=baseline_rmse,
+        thresholds=thresholds,
+    )
+    if strict_pass:
+        score += 0.5
+        positive.append("ML passed strict out-of-sample diagnostic gates.")
+    else:
+        score -= 0.5
+        limits.append("PREDICTIVE_EDGE_NOT_VALIDATED")
+        if status in {"", "NOT_RUN"}:
+            negative.append("ML model quality is unavailable or inconclusive.")
         else:
-            negative.append("ML model is not better than the naive directional baseline.")
-    elif status not in {"", "NOT_RUN"}:
-        negative.append("ML model quality is unavailable or inconclusive.")
+            negative.append(
+                "ML predictive edge is not validated by strict OOS R^2, IC, RMSE and DA gates."
+            )
     return {
         "score_adjustment": score,
         "drivers_positive": positive,
         "drivers_negative": negative,
+        "limits_triggered": limits,
         "model_quality": {
             "status": status,
             "directional_accuracy": directional_accuracy,
             "baseline_directional_accuracy": baseline_accuracy,
+            "directional_accuracy_edge": edge,
+            "oos_r_squared": oos_r_squared,
+            "information_coefficient": information_coefficient,
+            "rmse": rmse,
+            "baseline_rmse": baseline_rmse,
+            "strict_predictive_edge_validated": strict_pass,
         },
     }
+
+
+def _strict_ml_pass(
+    *,
+    status: str,
+    gates: dict[str, Any],
+    edge: float | None,
+    directional_accuracy: float | None,
+    oos_r_squared: float | None,
+    information_coefficient: float | None,
+    rmse: float | None,
+    baseline_rmse: float | None,
+    thresholds: DecisionThresholds,
+) -> bool:
+    if gates:
+        return all(bool(value) for value in gates.values())
+    if status != "MODEL_EDGE_PASSED_STRICT_DIAGNOSTIC_GATES":
+        return False
+    if rmse is None or baseline_rmse is None or rmse >= baseline_rmse:
+        return False
+    if edge is None or edge < thresholds.min_ml_directional_accuracy_edge:
+        return False
+    if (
+        directional_accuracy is None
+        or directional_accuracy < thresholds.min_ml_directional_accuracy
+    ):
+        return False
+    if oos_r_squared is None or oos_r_squared <= thresholds.min_oos_r_squared:
+        return False
+    if (
+        information_coefficient is None
+        or information_coefficient <= thresholds.min_information_coefficient
+    ):
+        return False
+    return True
 
 
 def _backtest_quality(backtesting: dict[str, Any]) -> dict[str, Any]:
@@ -310,6 +379,10 @@ def _signal_from_score(score: float, limits: list[str]) -> str:
         return "UNFAVORABLE"
     if {"VAR_95_LIMIT_BREACHED", "ES_95_LIMIT_BREACHED"}.intersection(limits):
         return "CAUTION" if score >= 0 else "UNFAVORABLE"
+    if "DATA_QUALITY_WARNINGS_PRESENT" in limits:
+        return "NEUTRAL" if score >= 1.0 else "CAUTION"
+    if "PREDICTIVE_EDGE_NOT_VALIDATED" in limits:
+        return "NEUTRAL" if score >= 1.0 else "CAUTION"
     if score >= 4.0:
         return "FAVORABLE"
     if score >= 1.0:
@@ -327,7 +400,7 @@ def _confidence(
     if observations is None or observations < 1_260:
         return "LOW"
     ml_status = str(ml_quality["model_quality"].get("status", "NOT_RUN"))
-    if ml_status == "MODEL_OUTPERFORMS_NAIVE_UNDER_TEST_ASSUMPTIONS":
+    if ml_status == "MODEL_EDGE_PASSED_STRICT_DIAGNOSTIC_GATES":
         return "HIGH"
     return "MEDIUM"
 

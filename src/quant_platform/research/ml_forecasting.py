@@ -40,7 +40,7 @@ SKLEARN_AVAILABLE = importlib.util.find_spec("sklearn") is not None
 
 STATUS_INSUFFICIENT = "INSUFFICIENT_DATA"
 STATUS_NAIVE_BETTER = "MODEL_NOT_BETTER_THAN_NAIVE_BASELINE"
-STATUS_OUTPERFORMS = "MODEL_OUTPERFORMS_NAIVE_UNDER_TEST_ASSUMPTIONS"
+STATUS_OUTPERFORMS = "MODEL_EDGE_PASSED_STRICT_DIAGNOSTIC_GATES"
 STATUS_SKLEARN_MISSING = "SKLEARN_UNAVAILABLE_BASELINES_ONLY"
 
 
@@ -158,7 +158,7 @@ def run_walk_forward_forecast(
 
     model_metrics = _regression_and_direction_metrics(actuals, model_preds, periods_per_year)
     naive_metrics = _regression_and_direction_metrics(actuals, naive_preds, periods_per_year)
-    status = _model_status(model_metrics, naive_metrics)
+    status, approval_gates = _model_status(model_metrics, naive_metrics)
 
     sklearn_used = bool(
         (result["model_name"] != "historical_mean_baseline").any()
@@ -210,6 +210,13 @@ def run_walk_forward_forecast(
         "baseline_rmse": naive_metrics["rmse"],
         "baseline_mae": naive_metrics["mae"],
         "baseline_directional_accuracy": naive_metrics["directional_accuracy"],
+        "rmse_improvement_vs_naive": naive_metrics["rmse"] - model_metrics["rmse"],
+        "mae_improvement_vs_naive": naive_metrics["mae"] - model_metrics["mae"],
+        "directional_accuracy_edge_vs_naive": (
+            model_metrics["directional_accuracy"] - naive_metrics["directional_accuracy"]
+        ),
+        "approval_gates": approval_gates,
+        "status_reason": _status_reason(status, approval_gates),
         "garch_forecast": garch_forecast,
         "calibration_warning": _calibration_warning(model_metrics, naive_metrics),
         "prediction_rows": rows[-252:],
@@ -552,17 +559,36 @@ def _regression_and_direction_metrics(
     }
 
 
-def _model_status(model: dict[str, float], naive: dict[str, float]) -> str:
-    rmse_better = model["rmse"] < naive["rmse"]
+def _model_status(model: dict[str, float], naive: dict[str, float]) -> tuple[str, dict[str, bool]]:
     direction_edge = model["directional_accuracy"] - naive["directional_accuracy"]
-    if rmse_better and direction_edge >= 0.02:
-        return STATUS_OUTPERFORMS
-    return STATUS_NAIVE_BETTER
+    gates = {
+        "rmse_improves_naive": model["rmse"] < naive["rmse"],
+        "mae_improves_naive": model["mae"] < naive["mae"],
+        "directional_accuracy_edge_ge_2pct": direction_edge >= 0.02,
+        "directional_accuracy_ge_52pct": model["directional_accuracy"] >= 0.52,
+        "oos_r_squared_positive": model["oos_r_squared"] > 0.0,
+        "information_coefficient_positive": model["information_coefficient"] > 0.0,
+        "strategy_sharpe_positive": model["strategy_sharpe"] > 0.0,
+    }
+    if all(gates.values()):
+        return STATUS_OUTPERFORMS, gates
+    return STATUS_NAIVE_BETTER, gates
+
+
+def _status_reason(status: str, approval_gates: dict[str, bool]) -> str:
+    if status == STATUS_OUTPERFORMS:
+        return "All strict diagnostic gates passed under the configured walk-forward test."
+    failed = [name for name, passed in approval_gates.items() if not passed]
+    return "Predictive edge not validated; failed gates: " + ", ".join(failed)
 
 
 def _calibration_warning(model: dict[str, float], naive: dict[str, float]) -> str | None:
     if model["rmse"] >= naive["rmse"]:
         return "MODEL_NOT_BETTER_THAN_NAIVE_BASELINE"
+    if model["oos_r_squared"] <= 0.0:
+        return "OOS_R_SQUARED_NOT_POSITIVE"
+    if model["information_coefficient"] <= 0.0:
+        return "INFORMATION_COEFFICIENT_NOT_POSITIVE"
     if model["directional_accuracy"] < 0.52:
         return "DIRECTIONAL_ACCURACY_EDGE_WEAK"
     return None

@@ -77,6 +77,7 @@ def build_latex_report(report_model: dict[str, Any], pdf_figures: dict[str, str]
     asset_id = str(report_model["asset_id"])
     metrics = _mapping(report_model.get("metrics"))
     conclusions = _mapping(report_model.get("conclusions"))
+    stock = _mapping(report_model.get("stock"))
 
     figure_relpath: dict[str, str] = {}
     for name, fpath in pdf_figures.items():
@@ -126,9 +127,7 @@ def build_latex_report(report_model: dict[str, Any], pdf_figures: dict[str, str]
     sections = []
 
     sections.append("\\section*{Executive Summary}")
-    sections.append(
-        _executive_summary_latex(asset_id, metrics, conclusions)
-    )
+    sections.append(_executive_summary_latex(asset_id, metrics, conclusions, stock))
     sections.append("")
 
     sections.append("\\section*{Plain-English Summary}")
@@ -142,7 +141,12 @@ def build_latex_report(report_model: dict[str, Any], pdf_figures: dict[str, str]
     return preamble + "\n".join(sections)
 
 
-def _executive_summary_latex(asset_id: str, metrics: dict[str, Any], conclusions: dict[str, Any]) -> str:
+def _executive_summary_latex(
+    asset_id: str,
+    metrics: dict[str, Any],
+    conclusions: dict[str, Any],
+    stock: dict[str, Any],
+) -> str:
     cum_ret = _pct(metrics.get("final_cumulative_return"))
     ann_vol = _pct(metrics.get("annualized_volatility"))
     max_dd = _pct(metrics.get("max_drawdown"))
@@ -150,21 +154,29 @@ def _executive_summary_latex(asset_id: str, metrics: dict[str, Any], conclusions
     sortino = _num(metrics.get("sortino_ratio"))
     beta = _num(metrics.get("beta_to_benchmark"))
     alpha = _pct(metrics.get("jensen_alpha"))
-    mc = conclusions.get("Monte Carlo interpretation", "")
-    bt = conclusions.get("Backtesting interpretation", "")
+    ml = _mapping(stock.get("ml_forecasting"))
+    audit = _mapping(stock.get("predictive_reliability_audit"))
     _accent = "\\'{}"
     per = f"per{_accent}odo"
     max_txt = f"m{_accent}aximo"
     pred = f"predicci{_accent}on"
     text = (
-        f"Para {_escape_latex(asset_id)}, en el {per} analizado, el rendimiento acumulado fue "
+        f"Historical asset profile: para {_escape_latex(asset_id)}, en el {per} analizado, "
+        "el rendimiento acumulado fue "
         f"{_escape_latex(str(cum_ret))}, la volatilidad anualizada fue "
         f"{_escape_latex(str(ann_vol))}, el {max_txt} drawdown fue "
         f"{_escape_latex(str(max_dd))}, Sharpe fue {_escape_latex(str(sharpe))}, "
         f"Sortino fue {_escape_latex(str(sortino))}, beta fue "
         f"{_escape_latex(str(beta))} y Jensen alpha fue "
-        f"{_escape_latex(str(alpha))}. {_escape_latex(str(mc))} "
-        f"{_escape_latex(str(bt))} No implica {pred} ni asesoramiento."
+        f"{_escape_latex(str(alpha))}. Estas metricas describen buy-and-hold/riesgo "
+        "historico, no alpha del modelo. Predictive model audit: "
+        f"rating={_escape_latex(str(audit.get('rating', 'N/A')))}; "
+        f"ML status={_escape_latex(str(ml.get('status', 'N/A')))}; "
+        f"OOS R2={_escape_latex(_num(ml.get('oos_r_squared')))}; "
+        f"IC={_escape_latex(_num(ml.get('information_coefficient')))}; "
+        f"DA={_escape_latex(_pct(ml.get('directional_accuracy')))}. "
+        f"{_escape_latex(str(audit.get('interpretation', '')))} "
+        f"No implica {pred} ni asesoramiento."
     )
     return text
 
