@@ -132,6 +132,10 @@ def classify_report(payload: dict[str, Any]) -> str:
         return "final_academic_paper"
     if payload.get("report_type") == "final_institutional_quant_package_metadata":
         return "final_institutional_package"
+    if payload.get("report_type") == "seven_quant_algorithms_research_study":
+        return "seven_algorithm_study"
+    if payload.get("report_type") == "seven_quant_algorithms_study_metadata":
+        return "seven_algorithm_study_metadata"
     if payload.get("report_type") == "academic_stock_report_metadata":
         return "academic_stock_report"
     if "coverage_by_asset" in payload and "suitable_for_backtest_demo" in payload:
@@ -216,6 +220,25 @@ def summarize_report_payload(payload: dict[str, Any]) -> dict[str, Any]:
             "warnings": len(payload.get("warnings", [])),
             "research_only": payload.get("research_only", True),
             "has_final_paper": "final_paper" in outputs if isinstance(outputs, dict) else False,
+        }
+    if report_type == "seven_algorithm_study":
+        source = payload.get("source_terminal_report", {})
+        tables = payload.get("tables", {})
+        decisions = tables.get("broker_readiness_decisions", []) if isinstance(tables, dict) else []
+        return {
+            "data_mode": source.get("data_mode") if isinstance(source, dict) else None,
+            "warnings": len(source.get("warnings", [])) if isinstance(source, dict) else 0,
+            "algorithms": len(decisions) if isinstance(decisions, list) else 0,
+            "research_only": payload.get("research_only", True),
+        }
+    if report_type == "seven_algorithm_study_metadata":
+        outputs = payload.get("outputs", {})
+        return {
+            "json_path": outputs.get("json") if isinstance(outputs, dict) else None,
+            "markdown_path": outputs.get("markdown") if isinstance(outputs, dict) else None,
+            "html_path": outputs.get("html") if isinstance(outputs, dict) else None,
+            "pdf_path": outputs.get("pdf") if isinstance(outputs, dict) else None,
+            "research_only": payload.get("research_only", True),
         }
     if report_type == "academic_stock_report":
         outputs = payload.get("outputs", {})

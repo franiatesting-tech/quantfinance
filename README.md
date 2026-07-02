@@ -60,6 +60,7 @@ py -3 -m quant_platform.cli build-institutional-study --config configs/quant_ter
 py -3 -m quant_platform.cli generate-stock-academic-report --asset AAPL --terminal-report reports/generated/quant_terminal/10stocks_10y_report.json --format md --format html --format pdf --include-figures --overwrite
 py -3 -m quant_platform.cli generate-all-stock-academic-reports --terminal-report reports/generated/quant_terminal/10stocks_10y_report.json --output-dir reports/generated/academic_stock_reports --format md --format html --format pdf --include-figures --overwrite
 py -3.13 -m quant_platform.cli build-final-institutional-package --config configs/quant_terminal_10_stocks.yaml --provider yfinance --output-dir reports/generated/final_package --max-table-rows 20
+py -3.13 -m quant_platform.cli build-seven-algorithm-study --config configs/quant_terminal_10_stocks.yaml --provider yfinance --output-dir reports/generated/seven_algorithms_study --bibliography-pack ../quant_finance_papers_pack --max-table-rows 30
 py -3 -m quant_platform.cli list-providers
 py -3 -m quant_platform.cli validate-providers
 py -3 -m quant_platform.cli ui-status
@@ -123,6 +124,7 @@ Generated real-data artifacts are local only:
 - `reports/generated/institutional_study/`: strict real-data institutional study package with JSON, summary Markdown, academic paper Markdown, CSV tables, and HTML/SVG figures.
 - `reports/generated/academic_stock_reports/<asset>/`: per-stock academic Markdown, HTML, optional PDF, metadata, and Plotly figure HTML files.
 - `reports/generated/final_package/`: final institutional package with terminal report, institutional study, CSV tables, HTML figures, reproducibility manifest, and final Markdown/HTML/PDF paper.
+- `reports/generated/seven_algorithms_study/`: seven-algorithm replication study with JSON, Markdown, HTML, PDF, CSV tables, Plotly HTML figures, bibliography trace and broker-readiness decisions.
 
 If these folders are empty, the UI shows safe CLI commands instead of failing. Demo artifacts, if generated in future, must be clearly marked `DEMO_SYNTHETIC_NOT_REAL_DATA` and remain ignored by Git.
 
@@ -146,6 +148,7 @@ If these folders are empty, the UI shows safe CLI commands instead of failing. D
 - Institutional state-of-the-art study: generated with `generate-institutional-study` from an existing terminal report, or with `build-institutional-study` from provider data and config. It rejects synthetic data by default, writes first-row data tables, metrics, VaR/ES, ML audit, correlation/covariance matrices, portfolio weights, portfolio tail risk, concentration diagnostics, shrinkage sensitivity, critical findings, and HTML/SVG figures for normalized prices, cumulative returns, drawdowns, correlation heatmap, risk-return scatter, efficient frontier, and research decision scores. It also writes `institutional_quant_finance_paper.md`, a detailed academic paper with glossary, formulas, economic interpretation, limitations, roadmap, and implementation plan.
 - Academic stock reports: generated with `generate-stock-academic-report` or `generate-all-stock-academic-reports`; each report contains 25 sections, formulas, figures, ML assessment, quantitative decision signal, conclusions, limitations, reproducibility, mathematical appendix, and bibliography traceability. PDF export uses WeasyPrint, Playwright Chromium, or Pandoc when available; otherwise HTML remains printable and metadata records `PDF_EXPORT_UNAVAILABLE_INSTALL_RENDERER`.
 - Final institutional package: generated with `build-final-institutional-package`; it creates the terminal report, institutional study, final paper, reproducibility manifest, CSV tables, HTML figures and optional PDF. The paper includes dependency/configuration instructions for PDF rendering, factor data and manual email delivery.
+- Seven algorithms study: generated with `build-seven-algorithm-study`; it replicates Black-Scholes, Monte Carlo, Markowitz, OU pairs trading, Kalman dynamic hedge ratio, GARCH and ML alpha diagnostics using provider data and the downloaded bibliography pack. Broker decisions remain blocked for real execution.
 - Local UI: reads these reports for inspection only and does not generate new reports automatically.
 
 Free public providers can revise data, fail per ticker, impose rate limits, and have licensing constraints. yfinance adjusted-price handling and corporate actions require review before professional use. Current universes can have survivorship bias.
@@ -175,6 +178,7 @@ Free public providers can revise data, fail per ticker, impose rate limits, and 
 - Professional quant terminal design: `docs/architecture/professional_quant_terminal_design.md`.
 - Final institutional platform design: `docs/architecture/final_institutional_quant_platform_design.md`.
 - Final institutional package user guide: `docs/usage/final_institutional_package_user_guide.md`.
+- Seven algorithms replication study: `docs/research/seven_quant_algorithms_replication_study.md`.
 - Academic stock report design: `docs/architecture/academic_stock_report_design.md`.
 - Professional methods review: `docs/research/professional_quant_methods_review.md`.
 - Interactive UI design: `docs/architecture/interactive_ui_design.md`.

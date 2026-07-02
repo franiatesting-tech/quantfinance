@@ -43,6 +43,7 @@ from quant_platform.research.report import (
     write_frontier_csv,
     write_quant_terminal_report,
 )
+from quant_platform.research.seven_algorithms_study import write_seven_algorithm_study
 from quant_platform.ui.actions import build_ui_status, launch_ui_command
 
 
@@ -159,6 +160,33 @@ def build_parser() -> argparse.ArgumentParser:
     final_package.add_argument("--offline-synthetic", action="store_true")
     final_package.add_argument("--allow-synthetic", action="store_true")
     final_package.add_argument("--dry-run", action="store_true")
+
+    seven = subparsers.add_parser("generate-seven-algorithm-study")
+    seven.add_argument(
+        "--terminal-report",
+        default="reports/generated/final_package/terminal_report/10stocks_10y_report.json",
+    )
+    seven.add_argument("--output-dir", default="reports/generated/seven_algorithms_study")
+    seven.add_argument(
+        "--bibliography-pack",
+        default="../quant_finance_papers_pack",
+    )
+    seven.add_argument("--max-table-rows", type=int, default=30)
+    seven.add_argument("--allow-synthetic", action="store_true")
+    seven.add_argument("--overwrite", action="store_true")
+
+    build_seven = subparsers.add_parser("build-seven-algorithm-study")
+    build_seven.add_argument("--config", required=True)
+    build_seven.add_argument("--provider", default="yfinance")
+    build_seven.add_argument("--output-dir", default="reports/generated/seven_algorithms_study")
+    build_seven.add_argument(
+        "--bibliography-pack",
+        default="../quant_finance_papers_pack",
+    )
+    build_seven.add_argument("--max-table-rows", type=int, default=30)
+    build_seven.add_argument("--offline-synthetic", action="store_true")
+    build_seven.add_argument("--allow-synthetic", action="store_true")
+    build_seven.add_argument("--dry-run", action="store_true")
 
     stock_report = subparsers.add_parser("generate-stock-academic-report")
     stock_report.add_argument("--asset", required=True)
@@ -492,6 +520,84 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         try:
             summary = _build_final_institutional_package(args, settings)
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "generate-seven-algorithm-study":
+        try:
+            terminal_report = _load_terminal_report(args.terminal_report)
+            summary = write_seven_algorithm_study(
+                terminal_report,
+                output_dir=args.output_dir,
+                bibliography_pack_dir=args.bibliography_pack,
+                strict_real_data=not args.allow_synthetic,
+                max_table_rows=args.max_table_rows,
+                overwrite=args.overwrite,
+            )
+        except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
+            print(
+                json.dumps(
+                    {"status": "failed", "error": _sanitize_error(exc)},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 1
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return 0
+    if args.command == "build-seven-algorithm-study":
+        if args.dry_run:
+            print(
+                json.dumps(
+                    {
+                        "dry_run": True,
+                        "config": args.config,
+                        "provider": args.provider,
+                        "output_dir": args.output_dir,
+                        "bibliography_pack": args.bibliography_pack,
+                        "offline_synthetic": args.offline_synthetic,
+                        "strict_real_data": not args.allow_synthetic,
+                        "network_auto_run": False,
+                        "research_only": True,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return 0
+        try:
+            config = load_quant_terminal_config(args.config)
+            terminal_report = build_quant_terminal_report(
+                config=config,
+                settings=settings,
+                provider_name=args.provider,
+                offline_synthetic=args.offline_synthetic,
+            )
+            data_mode = str(terminal_report.get("data", {}).get("mode", "UNKNOWN"))
+            if not args.allow_synthetic and not data_mode.startswith("provider_"):
+                raise ValueError(
+                    f"Seven-algorithm study requires provider data, got {data_mode!r}."
+                )
+            summary = write_seven_algorithm_study(
+                terminal_report,
+                output_dir=args.output_dir,
+                bibliography_pack_dir=args.bibliography_pack,
+                strict_real_data=not args.allow_synthetic,
+                max_table_rows=args.max_table_rows,
+                overwrite=True,
+            )
+            terminal_dir = Path(args.output_dir) / "terminal_report"
+            terminal_dir.mkdir(parents=True, exist_ok=True)
+            terminal_report_path = write_quant_terminal_report(terminal_report, terminal_dir)
+            summary["terminal_report_path"] = str(terminal_report_path)
         except Exception as exc:  # noqa: BLE001 - CLI reports sanitized local failures.
             print(
                 json.dumps(

@@ -82,12 +82,17 @@ def test_discover_reports_classifies_backtest_and_profile_reports(tmp_path) -> N
         "outputs": {"json": "institutional_quant_study.json"},
         "critical_findings_count": 2,
     }
+    seven_metadata = {
+        "report_type": "seven_quant_algorithms_study_metadata",
+        "outputs": {"json": "seven.json", "pdf": "seven.pdf"},
+    }
     (report_dir / "backtest.json").write_text(json.dumps(backtest), encoding="utf-8")
     (report_dir / "comparison.json").write_text(json.dumps(comparison), encoding="utf-8")
     (report_dir / "academic.json").write_text(json.dumps(academic), encoding="utf-8")
     (report_dir / "final_package.json").write_text(json.dumps(final_package), encoding="utf-8")
     (report_dir / "final_paper.json").write_text(json.dumps(final_paper), encoding="utf-8")
     (report_dir / "study_metadata.json").write_text(json.dumps(study_metadata), encoding="utf-8")
+    (report_dir / "seven_metadata.json").write_text(json.dumps(seven_metadata), encoding="utf-8")
 
     rows = discover_reports(report_dir)
 
@@ -98,6 +103,7 @@ def test_discover_reports_classifies_backtest_and_profile_reports(tmp_path) -> N
         "final_institutional_package",
         "institutional_study_metadata",
         "profile_comparison",
+        "seven_algorithm_study_metadata",
     }
     assert classify_report(read_json_report(report_dir / "backtest.json")) == "backtest"
     assert (

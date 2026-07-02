@@ -287,6 +287,59 @@ def test_cli_build_final_institutional_package_dry_run(capsys, tmp_path) -> None
     assert payload["strict_real_data"] is True
 
 
+def test_cli_build_seven_algorithm_study_dry_run(capsys, tmp_path) -> None:  # noqa: ANN001
+    exit_code = cli.main(
+        [
+            "build-seven-algorithm-study",
+            "--config",
+            "configs/quant_terminal_10_stocks.yaml",
+            "--output-dir",
+            str(tmp_path / "seven"),
+            "--dry-run",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["dry_run"] is True
+    assert payload["research_only"] is True
+    assert payload["strict_real_data"] is True
+
+
+def test_cli_generate_seven_algorithm_study_uses_writer(
+    monkeypatch, capsys, tmp_path
+) -> None:  # noqa: ANN001
+    terminal_report = tmp_path / "terminal.json"
+    terminal_report.write_text(
+        json.dumps({"report_type": "professional_quant_terminal"}), encoding="utf-8"
+    )
+
+    def fake_writer(*args, **kwargs):  # noqa: ANN001, ARG001
+        return {
+            "research_only": True,
+            "outputs": {"json": str(tmp_path / "study.json")},
+            "strict_real_data": kwargs["strict_real_data"],
+        }
+
+    monkeypatch.setattr(cli, "write_seven_algorithm_study", fake_writer)
+
+    exit_code = cli.main(
+        [
+            "generate-seven-algorithm-study",
+            "--terminal-report",
+            str(terminal_report),
+            "--output-dir",
+            str(tmp_path / "seven"),
+            "--overwrite",
+        ]
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert payload["research_only"] is True
+    assert payload["strict_real_data"] is True
+
+
 def test_cli_generate_stock_academic_report_from_local_json(capsys, tmp_path) -> None:  # noqa: ANN001
     terminal_report = tmp_path / "terminal.json"
     terminal_report.write_text(json.dumps(_sample_academic_terminal_report()), encoding="utf-8")
